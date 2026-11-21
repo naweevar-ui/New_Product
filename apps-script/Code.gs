@@ -11,13 +11,16 @@
  *       ├── Process Flow - ...
  *       └── <ชื่อสินค้า> v1 สรุปข้อมูล   (Google Doc สร้างตอนส่งให้ RA)
  *
- * ก่อนใช้งาน: ตั้ง TEAM_KEY (รหัสจัดซื้อ) และ RA_KEY (รหัส RA) แล้ว Deploy เป็น Web app
+ * ก่อนใช้งาน: ตั้ง TEAM_KEY, RA_KEY, RA_EMAILS, BUY_EMAILS แล้วรัน setup และ Deploy เป็น Web app
  * (Execute as: Me, Who has access: Anyone) — ดูขั้นตอนใน README.md
  */
 
 const ROOT_ID = '1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9'; // โฟลเดอร์ "RA ตรวจสินค้าใหม่"
 const TEAM_KEY = 'CHANGE-ME';    // รหัสฝ่ายจัดซื้อ: สร้าง/แก้/ส่งงานได้ แต่ Approve/Reject ไม่ได้
 const RA_KEY = 'CHANGE-ME-RA';   // รหัส RA: ตรวจ และ Approve/Reject ได้ (ให้เฉพาะ RA) — อย่าใส่รหัสจริงลง GitHub
+const RA_EMAILS = ['ra@example.com'];          // อีเมล RA: ได้รับแจ้งเตือนเมื่อจัดซื้อส่งงาน (ใส่หลายคนได้ คั่นด้วย ,)
+const BUY_EMAILS = ['purchasing@example.com'];  // อีเมลจัดซื้อ: ได้รับแจ้งเตือนเมื่อ RA Approve/Reject
+const WEB_URL = 'https://naweevar-ui.github.io/New_Product/';
 const TZ = 'Asia/Bangkok';
 const SEC = { ing: 'Ingredient', nut: 'Nutrition', flow: 'Process Flow' };
 const HEAD = ['รหัส', 'ชื่อสินค้า', 'สถานะ', 'ผู้ส่ง', 'อัปเดตล่าสุด', 'ยืนยัน Ingredient 100%',
@@ -158,7 +161,52 @@ function saveItem(item, role) {
   const r = findRow(sh, item.id);
   if (r > 0) sh.getRange(r, 1, 1, row.length).setValues([row]);
   else sh.appendRow(row);
+
+  // แจ้งเตือนทางอีเมล (ถ้าส่งไม่สำเร็จ ข้อมูลยังบันทึกตามปกติ)
+  try {
+    if (item.status === 'submitted' && was !== 'submitted') notifyRA(item, ver);
+    if ((item.status === 'approved' || item.status === 'rejected') && was === 'submitted') notifyBuyer(item);
+  } catch (e) { console.error('ส่งอีเมลไม่สำเร็จ: ' + e); }
   return item;
+}
+
+/* ---------- อีเมลแจ้งเตือน ---------- */
+function esc_(s) {
+  return String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+}
+function mailLinks_(item) {
+  const sec = k => {
+    const fs = (item.files && item.files[k]) || [];
+    return '<li><b>' + SEC[k] + ':</b> ' + (fs.length ? fs.map(f => '<a href="' + esc_(f.url) + '">' + esc_(f.name) + '</a>').join(', ') : '-') + '</li>';
+  };
+  return '<ul>' + sec('ing') + sec('nut') + sec('flow') + '</ul>' +
+    '<p>' + (item.folder ? '<a href="' + esc_(item.folder.url) + '">เปิดโฟลเดอร์สินค้าใน Drive</a> · ' : '') +
+    (item.drive ? '<a href="' + esc_(item.drive.url) + '">เอกสารสรุป</a> · ' : '') +
+    '<a href="' + WEB_URL + '">เปิดระบบตรวจสินค้าใหม่</a></p>';
+}
+function send_(to, subject, html) {
+  const list = to.filter(x => x && x.indexOf('@example.com') < 0);
+  if (!list.length) return;
+  MailApp.sendEmail({ to: list.join(','), subject: subject, name: 'ระบบตรวจสินค้าใหม่ (RA)',
+    htmlBody: '<div style="font-family:sans-serif;font-size:15px;line-height:1.6">' + html +
+      '<p style="color:#888;font-size:12px">อีเมลนี้ส่งอัตโนมัติจากระบบตรวจสินค้าใหม่</p></div>' });
+}
+function notifyRA(item, ver) {
+  const again = ver > 1 ? ' (ส่งแก้ไขครั้งที่ ' + ver + ')' : '';
+  send_(RA_EMAILS, '[รอ RA ตรวจ] ' + item.name + again,
+    '<p>ฝ่ายจัดซื้อส่งข้อมูลสินค้าใหม่ให้ตรวจ' + esc_(again) + '</p>' +
+    '<p><b>สินค้า:</b> ' + esc_(item.name) + '<br><b>ส่งโดย:</b> ' + esc_(item.createdBy || '-') +
+    '<br><b>เวลา:</b> ' + fmt(item.submittedAt || Date.now()) +
+    '<br><b>Ingredient รวม 100%:</b> ' + (item.ing100 ? 'จัดซื้อยืนยันแล้ว' : 'ยังไม่ยืนยัน') + '</p>' + mailLinks_(item));
+}
+function notifyBuyer(item) {
+  const ok = item.status === 'approved';
+  const secs = (item.rejectSections || []).map(k => SEC[k] || (k === 'name' ? 'ชื่อสินค้า' : k)).join(', ');
+  send_(BUY_EMAILS, (ok ? '[อนุมัติแล้ว] ' : '[Reject ต้องแก้ไข] ') + item.name,
+    '<p>RA ' + (ok ? '<b style="color:#1b7a42">อนุมัติ</b>' : '<b style="color:#c0322a">Reject</b>') + ' สินค้า <b>' + esc_(item.name) + '</b></p>' +
+    '<p><b>ผู้ตรวจ:</b> ' + esc_(item.reviewedBy || '-') + '<br><b>เวลา:</b> ' + fmt(item.reviewedAt || Date.now()) + '</p>' +
+    (ok ? '' : '<p><b>ส่วนที่ต้องแก้:</b> ' + esc_(secs || '-') + '<br><b>เหตุผล:</b> ' + esc_(item.rejectReason || '-') +
+      '</p><p>เข้าระบบเพื่อแก้ไขแล้วกดส่งให้ RA ใหม่</p>') + mailLinks_(item));
 }
 
 function deleteItem(id) {
@@ -221,9 +269,10 @@ function fmt(t, pattern) {
   return Utilities.formatDate(new Date(t), TZ, pattern || 'd/M/yyyy HH:mm');
 }
 
-/** กดรันฟังก์ชันนี้ 1 ครั้งใน Apps Script เพื่ออนุญาตสิทธิ์ Drive / Sheets / Docs และสร้าง Sheet สรุป */
+/** กดรันฟังก์ชันนี้ใน Apps Script เพื่ออนุญาตสิทธิ์ Drive / Sheets / Docs / ส่งอีเมล และสร้าง Sheet สรุป */
 function setup() {
   sheet();
+  MailApp.getRemainingDailyQuota(); // ขอสิทธิ์ส่งอีเมล
   DriveApp.getFolderById(ROOT_ID).getName();
   Logger.log('พร้อมใช้งาน');
 }
