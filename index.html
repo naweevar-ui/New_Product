@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ระบบตรวจสินค้าใหม่ RA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm, exact QC paperwork — a checker's desk, no decoration
+   IDEA: a product spec docket that moves from purchasing to RA and gets stamped
+   PICTURE: the docket itself — ingredient meter that must hit 100%, process-flow chain, status stamp
+   COLOUR and TYPE: banana-leaf green band, white paper, stamp red for reject; IBM Plex Sans Thai
+   LAYOUT: queue on the left, docket on the right; stacks on phones */
+:root{color-scheme:light dark;
+--bg:light-dark(#f3f5f0,#0f1411);--paper:light-dark(#fff,#18201b);--ink:light-dark(#142019,#e6ece7);--mute:light-dark(#5a685e,#98a69c);
+--line:light-dark(#dbe1d8,#2b362f);--soft:light-dark(#f7f9f5,#1e2822);--band:light-dark(#1c4a2e,#0b1a11);--leaf:light-dark(#1f6b3c,#6cc28a);
+--ok:light-dark(#1b7a42,#62c98a);--okb:light-dark(#e3f4e8,#15301f);--warn:light-dark(#9a6412,#e8b257);--warnb:light-dark(#fbf0db,#2d2412);
+--bad:light-dark(#c0322a,#ff7d70);--badb:light-dark(#fbe6e3,#351816)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans Thai",system-ui,sans-serif;overflow-x:clip}
+button,input,textarea{font:inherit;color:inherit}
+.top{background:var(--band);color:#f1f6f1;padding:22px max(4vw,16px);display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between}
+.top h1{margin:0;font-size:clamp(24px,3.4vw,34px);line-height:1.1;font-weight:700}
+.top p{margin:4px 0 0;color:#bcd3c3;font-size:15px}
+.seg{display:flex;background:rgba(255,255,255,.1);border-radius:12px;padding:4px;gap:4px}
+.seg button{border:0;background:none;color:#dfeee3;padding:10px 18px;border-radius:9px;min-height:44px;cursor:pointer;font-weight:500}
+.seg button[aria-pressed=true]{background:#fff;color:#173a25}
+.note{margin:12px max(4vw,16px) 0;padding:10px 14px;border-radius:10px;background:var(--warnb);color:var(--warn);font-size:14px}
+.wrap{display:grid;grid-template-columns:minmax(0,320px) minmax(0,1fr);gap:20px;padding:20px max(4vw,16px) 40px;max-width:1300px;margin:0 auto}
+@media(max-width:860px){.wrap{grid-template-columns:minmax(0,1fr)}}
+.side{display:flex;flex-direction:column;gap:10px}
+.side-h{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.side-h h2{margin:0;font-size:17px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.tabs button{border:1px solid var(--line);background:var(--paper);border-radius:999px;padding:6px 14px;min-height:40px;cursor:pointer;font-size:14px}
+.tabs button[aria-pressed=true]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.item{display:block;width:100%;text-align:start;border:1px solid var(--line);background:var(--paper);border-radius:12px;padding:12px 14px;cursor:pointer}
+.item[aria-current=true]{border-color:var(--leaf);box-shadow:0 0 0 2px color-mix(in srgb,var(--leaf) 30%,transparent)}
+.item b{display:block;font-weight:600;overflow-wrap:anywhere}
+.item small{color:var(--mute);font-size:13px;display:block;margin-top:4px}
+.item .why{color:var(--bad);font-size:13px;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.chip{display:inline-block;font-size:13px;font-weight:600;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.s-draft{background:var(--soft);color:var(--mute);border:1px solid var(--line)}.s-sub{background:var(--warnb);color:var(--warn)}
+.s-rej{background:var(--badb);color:var(--bad)}.s-ok{background:var(--okb);color:var(--ok)}
+.empty{color:var(--mute);font-size:14px;padding:18px;border:1px dashed var(--line);border-radius:12px;text-align:center}
+.btn{border:1px solid var(--line);background:var(--paper);border-radius:10px;padding:10px 16px;min-height:44px;cursor:pointer;font-weight:500}
+.btn:hover:not(:disabled){border-color:var(--ink)}
+.btn.pri{background:var(--leaf);border-color:var(--leaf);color:#fff}
+.btn.bad{background:var(--bad);border-color:var(--bad);color:#fff}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sm{min-height:36px;padding:4px 12px;font-size:14px}
+.icon{border:0;background:none;width:40px;height:40px;border-radius:8px;cursor:pointer;color:var(--mute);font-size:18px;flex:none}
+.icon:hover:not(:disabled){background:var(--soft);color:var(--ink)}
+:focus-visible{outline:3px solid color-mix(in srgb,var(--leaf) 60%,transparent);outline-offset:2px}
+.sheet{background:var(--paper);border:1px solid var(--line);border-radius:16px;position:relative;overflow:hidden}
+.sheet-h{padding:22px clamp(16px,3vw,30px) 18px;border-bottom:1px solid var(--line);display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between;align-items:flex-start}
+.sheet-h h2{margin:6px 0 0;font-size:clamp(24px,3vw,32px);line-height:1.1;text-wrap:balance;overflow-wrap:anywhere}
+.meta{color:var(--mute);font-size:14px}
+.sec{padding:20px clamp(16px,3vw,30px);border-bottom:1px solid var(--line)}
+.sec-h{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.sec-h h3{margin:0;font-size:18px}
+.ck{font-size:13px;font-weight:600;padding:2px 10px;border-radius:999px;white-space:nowrap}
+.ck.y{background:var(--okb);color:var(--ok)}.ck.n{background:var(--badb);color:var(--bad)}
+input[type=text],input[type=number],textarea{width:100%;border:1px solid var(--line);background:var(--soft);border-radius:9px;padding:9px 12px;font-size:16px;min-height:44px}
+input:focus,textarea:focus{border-color:var(--leaf);outline:none;background:var(--paper)}
+input:disabled,textarea:disabled{background:transparent;border-color:transparent;padding-inline:0}
+.rows{display:flex;flex-direction:column;gap:8px}
+.row{display:grid;gap:8px;align-items:center}
+.r-ing{grid-template-columns:minmax(0,1fr) 120px 40px}.r-nut{grid-template-columns:minmax(0,1fr) 110px 80px 40px}
+.r-flow{grid-template-columns:32px minmax(0,1fr) 40px 40px 40px}
+.r-head{font-size:13px;color:var(--mute)}
+@media(max-width:520px){.r-ing{grid-template-columns:minmax(0,1fr) 92px 40px}.r-nut{grid-template-columns:minmax(0,1fr) 78px 62px 40px}.r-flow{grid-template-columns:26px minmax(0,1fr) 40px}.r-flow .mv{display:none}}
+.n{width:30px;height:30px;border-radius:50%;background:var(--leaf);color:#fff;display:grid;place-items:center;font-size:14px;font-weight:600}
+.add{margin-top:10px}
+.meter{margin-top:14px;padding:14px;border-radius:12px;background:var(--soft)}
+.meter .track{height:14px;border-radius:7px;background:var(--line);overflow:hidden;position:relative}
+.meter .fill{height:100%;border-radius:7px;transition:width .3s}
+.meter .lab{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:8px;font-size:15px}
+.meter .big{font-size:24px;font-weight:700;white-space:nowrap}
+.banner{margin:16px clamp(16px,3vw,30px) 0;padding:12px 16px;border-radius:12px;background:var(--badb);color:var(--bad);font-size:15px}
+.banner b{display:block}
+.bar{position:sticky;bottom:0;background:var(--paper);padding:16px clamp(16px,3vw,30px);display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;border-top:1px solid var(--line)}
+.miss{font-size:14px;color:var(--bad);margin:0;padding:0;list-style:none}
+.miss.okk{color:var(--ok)}
+.acts{display:flex;gap:8px;flex-wrap:wrap;margin-inline-start:auto}
+table{width:100%;border-collapse:collapse;font-size:15px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:start}
+th{font-size:13px;color:var(--mute);font-weight:500}
+td.r,th.r{text-align:end;white-space:nowrap;font-variant-numeric:tabular-nums}
+tfoot td{font-weight:700;border-bottom:0}
+.chain{display:flex;flex-direction:column;align-items:flex-start;gap:0}
+.step{display:flex;gap:12px;align-items:center;border:1px solid var(--line);background:var(--soft);border-radius:10px;padding:10px 14px;max-width:560px;width:100%}
+.arrow{width:2px;height:18px;background:var(--leaf);margin-inline-start:28px;position:relative}
+.arrow::after{content:"";position:absolute;bottom:-2px;left:-5px;border:6px solid transparent;border-top-color:var(--leaf);border-bottom:0}
+.stamp{position:absolute;top:22px;right:clamp(16px,3vw,30px);transform:rotate(-8deg);border:3px solid currentColor;border-radius:8px;padding:4px 14px;font-weight:700;font-size:20px;letter-spacing:.02em;opacity:.9;pointer-events:none}
+.stamp.bad{color:var(--bad)}.stamp.ok{color:var(--ok)}.stamp.sub{color:var(--warn)}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:8px}
+.checks div{border-radius:10px;padding:10px 12px;font-size:14px}
+.checks .y{background:var(--okb);color:var(--ok)}.checks .n{background:var(--badb);color:var(--bad)}
+.decide{display:flex;flex-direction:column;gap:12px}
+.boxes{display:flex;flex-wrap:wrap;gap:8px}
+.boxes label{display:flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:10px;padding:8px 12px;min-height:44px;cursor:pointer;font-size:15px}
+.boxes input{width:18px;height:18px;accent-color:var(--bad)}
+.hist{list-style:none;margin:0;padding:0;font-size:14px;color:var(--mute)}
+.hist li{padding:6px 0;border-bottom:1px dashed var(--line)}.hist li b{color:var(--ink);font-weight:600}
+.intro{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:clamp(20px,4vw,40px)}
+.intro h2{margin:0 0 8px;font-size:clamp(24px,3vw,32px);line-height:1.1}
+.req{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px;margin:18px 0}
+.req div{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--soft)}
+.req b{display:block}.req span{font-size:14px;color:var(--mute)}
+.sample{font-size:13px;color:var(--mute)}
+.tk{width:22px;height:22px;accent-color:var(--ok);cursor:pointer}.ingt tr.done td{background:var(--okb)}
+.drv{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px}
+.dlink{color:var(--leaf);font-weight:600}.dwarn{color:var(--warn)}
+@media (prefers-reduced-motion:reduce){.meter .fill{transition:none}}
+.files{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.file{display:flex;align-items:center;gap:10px;border:1px solid var(--line);background:var(--soft);border-radius:10px;padding:8px 8px 8px 12px}
+.file .ft{flex:none;width:44px;height:44px;border-radius:8px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:var(--leaf)}
+.file .ft.pdf{background:#b3382c}.file .ft.img{background:#2f6fa8}.file .ft.txt{background:#6a6f68}
+.file .fn{flex:1;overflow-wrap:anywhere;font-size:15px}.file .fn small{display:block;color:var(--mute);font-size:13px}
+.file a{color:var(--leaf);font-weight:600;white-space:nowrap;font-size:14px}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;border:2px dashed var(--line);border-radius:12px;padding:18px;cursor:pointer;color:var(--mute);font-size:14px;min-height:96px}
+.drop b{color:var(--ink);font-size:16px}.drop:hover,.drop.over{border-color:var(--leaf);background:color-mix(in srgb,var(--leaf) 6%,transparent)}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.drop:focus-within{outline:3px solid color-mix(in srgb,var(--leaf) 60%,transparent)}
+.uperr{color:var(--bad);font-size:14px;margin-top:6px}.upnow{color:var(--warn);font-size:14px;margin-top:6px}
+.sub-h{font-size:15px;font-weight:600;margin:16px 0 8px}
+</style></head><body>
+<header class="top">
+  <div><h1>ระบบตรวจสินค้าใหม่</h1><p>จัดซื้อกรอกชื่อและแนบไฟล์ครบ 3 ส่วน → เก็บใน Google Drive → RA ตรวจ → Approve หรือ Reject · <a href="https://drive.google.com/drive/folders/1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9" target="_blank" rel="noopener" style="color:#fff">โฟลเดอร์ Drive ↗</a></p></div>
+  <div class="seg" id="seg"><button data-role="buy" aria-pressed="false">ฝ่ายจัดซื้อ</button><button data-role="ra" aria-pressed="false">RA ตรวจสินค้า</button></div>
+</header>
+<div id="note" class="note" hidden></div>
+<main class="wrap"><aside class="side"><div class="side-h" id="sideH"></div><div class="rows" id="list"><div class="empty">กำลังโหลดข้อมูล…</div></div></aside><section id="pane"></section></main>
+<script>
+{
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ST={draft:['ร่าง','s-draft'],submitted:['รอ RA ตรวจ','s-sub'],rejected:['ถูก Reject','s-rej'],approved:['อนุมัติแล้ว','s-ok']};
+const SEC={name:'ชื่อสินค้า',ing:'Ingredient',nut:'Nutrition',flow:'Process Flow'};
+const FSEC=['ing','nut','flow'];
+const DRIVE='Google Drive',FOLDER='1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9',MAXB=16*1024*1024;
+let raDraft={id:null,reason:'',secs:[],tick:{}},db=null,user=null,me=null,mcp=null,fileArgs=null,items=[],names={},role='buy',sel=null,cur=null,dirty=false,raFilter='submitted',delArm=false,busy=false;
+const uploading={},upErr={},mem=new Map();
+try{role=localStorage.getItem('ra-role')==='ra'?'ra':'buy'}catch(e){}
+const now=()=>Date.now();
+const fmt=t=>t?new Date(t).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'';
+const num=v=>{const n=parseFloat(v);return isFinite(n)?n:NaN};
+const sumIng=p=>Math.round((p.ingredients||[]).reduce((a,r)=>a+(num(r.pct)||0),0)*1000)/1000;
+const who=id=>id?(names[id]||'ผู้ใช้'):'ผู้ใช้';
+const chip=s=>`<span class="chip ${ST[s]?.[1]||'s-draft'}">${ST[s]?.[0]||s}</span>`;
+const note=t=>{const n=$('#note');n.hidden=!t;n.textContent=t||''};
+const files=(p,k)=>(p.files&&p.files[k])||[];
+const kb=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
+
+function checks(p){
+  const ing=p.ingredients||[],s=sumIng(p);
+  const rows=ing.length>0&&ing.every(r=>String(r.name).trim()&&num(r.pct)>0);
+  const fi=files(p,'ing').length>0;
+  return{
+    name:{ok:!!String(p.name||'').trim(),msg:'ยังไม่ได้กรอกชื่อสินค้า'},
+    ing:{ok:fi&&rows&&Math.abs(s-100)<0.001,msg:!fi?'ยังไม่ได้แนบไฟล์ Ingredient':!rows?'ทุกแถวต้องมีชื่อวัตถุดิบและ % มากกว่า 0':`รวม ${s}% ต้องเท่ากับ 100%`},
+    nut:{ok:files(p,'nut').length>0,msg:'ยังไม่ได้แนบไฟล์ Nutrition'},
+    flow:{ok:files(p,'flow').length>0,msg:'ยังไม่ได้แนบไฟล์ Process Flow'}};
+}
+const allOk=c=>Object.values(c).every(x=>x.ok);
+const blank=()=>({id:'p'+now().toString(36)+Math.random().toString(36).slice(2,7),name:'',ingredients:[{name:'',pct:''}],files:{ing:[],nut:[],flow:[]},
+  status:'draft',rejectReason:'',rejectSections:[],createdBy:me,createdAt:now(),updatedAt:now(),history:[]});
+const clone=o=>JSON.parse(JSON.stringify(o));
+
+async function save(p){
+  p.updatedAt=now();
+  const body=clone(p);const id=body.id;delete body.id;
+  if(db){await db.collection('products').doc(id).set(body)}
+  else{mem.set(id,{...body,id});items=[...mem.values()].sort((a,b)=>b.updatedAt-a.updatedAt);renderSide()}
+}
+async function act(fn){if(busy)return;busy=true;try{await fn()}catch(e){note('บันทึกไม่สำเร็จ: '+(e&&e.message||e)+' — ลองใหม่อีกครั้ง')}finally{busy=false}}
+const log=(p,action,txt)=>{p.history=[...(p.history||[]),{at:now(),by:me,action,note:txt||''}]};
+
+/* ---------- Google Drive ---------- */
+function driveMsg(e){const c=e&&e.code;
+  if(c==='needs_reauth')return'การเชื่อม Google Drive หมดอายุ ให้เชื่อมใหม่ที่ claude.ai Settings → Connectors';
+  if(c==='server_not_connected'||c==='selection_required')return'ยังไม่ได้เชื่อม Google Drive ให้เพิ่มที่ claude.ai Settings → Connectors';
+  if(c==='not_in_manifest'||c==='approval_required')return'ยังไม่ได้อนุญาตให้หน้านี้ใช้ Google Drive ลองอีกครั้งแล้วกดอนุญาต';
+  if(c==='tool_error')return'Drive ไม่ยอมบันทึก อาจยังไม่มีสิทธิ์แก้ไขในโฟลเดอร์ RA ตรวจสินค้าใหม่';
+  if(c==='server_unavailable'||c==='upstream_error')return'ติดต่อ Drive ไม่ได้ชั่วคราว ไฟล์อาจถูกสร้างแล้ว ให้ตรวจในโฟลเดอร์ก่อนลองใหม่';
+  if(c==='too_big')return'ไฟล์ใหญ่เกินกว่าที่หน้านี้ส่งได้ ลองย่อขนาดไฟล์';
+  return'บันทึกลง Drive ไม่สำเร็จ'+(c?' ('+c+')':'');}
+const fid=r=>{const f=r&&r.payload||{};if(!f.id)throw{code:'tool_error'};return f};
+async function ensureFolder(p){
+  if(p.folder?.id)return p.folder.id;
+  if(!mcp)throw{code:'server_not_connected'};
+  const f=fid(await mcp.callTool(DRIVE,'create_file',{title:p.name.trim(),parentId:FOLDER,contentMimeType:'application/vnd.google-apps.folder'}));
+  p.folder={id:f.id,url:f.viewUrl||('https://drive.google.com/drive/folders/'+f.id),name:p.name.trim()};
+  return f.id;
+}
+function ftype(file){
+  const n=file.name.toLowerCase();
+  if(file.type==='application/pdf'||n.endsWith('.pdf'))return'application/pdf';
+  if(/^image\//.test(file.type))return file.type;
+  if(/\.(png)$/.test(n))return'image/png';if(/\.(jpe?g)$/.test(n))return'image/jpeg';
+  if(file.type==='text/plain'||n.endsWith('.txt'))return'text/plain';
+  return'';
+}
+const b64=file=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=()=>no(r.error);r.readAsDataURL(file)});
+async function uploadFile(p,sec,file){
+  const type=ftype(file);
+  const folder=await ensureFolder(p);
+  if(fileArgs===null){try{fileArgs=!!(await mcp.listTools()).fileArgs}catch(e){fileArgs=false}}
+  let content;
+  if(fileArgs)content={$file:{data:file,name:file.name,type}};
+  else{if(file.size>700*1024)throw{code:'too_big'};content=await b64(file)}
+  const f=fid(await mcp.callTool(DRIVE,'create_file',{title:`${SEC[sec]} - ${file.name}`,parentId:folder,base64Content:content,contentMimeType:type,disableConversionToGoogleType:true}));
+  return{id:f.id,url:f.viewUrl||('https://drive.google.com/file/d/'+f.id+'/view'),name:file.name,type,size:file.size,at:now(),by:me};
+}
+async function addFiles(sec,list){
+  if(!cur)return;
+  upErr[sec]='';
+  if(!String(cur.name||'').trim()){upErr[sec]='กรอกชื่อสินค้าก่อนแนบไฟล์ เพื่อใช้ตั้งชื่อโฟลเดอร์สินค้าใน Drive';renderForm();$('#f-name')?.focus();return}
+  const ok=[...list].filter(f=>{if(!ftype(f)){upErr[sec]=`“${f.name}” ไม่ใช่ PDF รูปภาพ หรือไฟล์ข้อความ`;return false}if(f.size>MAXB){upErr[sec]=`“${f.name}” ใหญ่เกิน 16 MB`;return false}return true});
+  if(!ok.length){renderForm();return}
+  if(!mcp){upErr[sec]=driveMsg({code:'server_not_connected'});renderForm();return}
+  uploading[sec]=ok.length;renderForm();
+  const p=cur;
+  for(const f of ok){
+    try{const meta=await uploadFile(p,sec,f);p.files=p.files||{ing:[],nut:[],flow:[]};p.files[sec]=[...files(p,sec),meta]}
+    catch(e){upErr[sec]=`อัปโหลด “${f.name}” ไม่สำเร็จ: ${driveMsg(e)}`}
+    uploading[sec]--;
+  }
+  uploading[sec]=0;
+  try{await save(p);dirty=false}catch(e){note('บันทึกรายการไม่สำเร็จ แต่ไฟล์อยู่ใน Drive แล้ว กด “บันทึกร่าง” อีกครั้ง')}
+  if(cur===p)renderForm();
+}
+function docHtml(p){
+  const s=sumIng(p),A={submit:'ส่งให้ RA',reject:'Reject',approve:'อนุมัติ'},td='style="border:1px solid #999;padding:4px 8px"';
+  const fl=k=>`<ul>${files(p,k).map(f=>`<li><a href="${esc(f.url)}">${esc(f.name)}</a></li>`).join('')}</ul>`;
+  return`<html><head><meta charset="utf-8"></head><body><h1>${esc(p.name)}</h1>
+  <p>สถานะ: ${ST[p.status]?.[0]||p.status} · ส่งโดย ${esc(who(p.createdBy))} · ${fmt(p.submittedAt||now())}</p>
+  <h2>Ingredient</h2>${fl('ing')}<table style="border-collapse:collapse"><tr><th ${td}>#</th><th ${td}>วัตถุดิบ</th><th ${td}>%</th></tr>
+  ${p.ingredients.slice().sort((a,b)=>num(b.pct)-num(a.pct)).map((r,i)=>`<tr><td ${td}>${i+1}</td><td ${td}>${esc(r.name)}</td><td ${td}>${num(r.pct).toFixed(2)}</td></tr>`).join('')}
+  <tr><td ${td}></td><td ${td}><b>รวม</b></td><td ${td}><b>${s.toFixed(2)}</b></td></tr></table>
+  <h2>Nutrition</h2>${fl('nut')}<h2>Process Flow</h2>${fl('flow')}
+  <h2>ประวัติ</h2><ul>${(p.history||[]).map(h=>`<li>${A[h.action]||h.action} โดย ${esc(who(h.by))} · ${fmt(h.at)}${h.note?' — '+esc(h.note):''}</li>`).join('')}</ul></body></html>`;
+}
+async function driveSave(p){
+  if(!mcp)throw{code:'server_not_connected'};
+  const ver=(p.history||[]).filter(h=>h.action==='submit').length||1;
+  const title=`${p.name} v${ver} สรุปข้อมูล (ส่ง RA ${new Date(p.submittedAt||now()).toLocaleDateString('th-TH')})`;
+  const folder=await ensureFolder(p);
+  if(p.folder.name!==p.name.trim()){try{await mcp.callTool(DRIVE,'update_file',{fileId:folder,title:p.name.trim()});p.folder.name=p.name.trim()}catch(e){}}
+  const f=fid(await mcp.callTool(DRIVE,'create_file',{title,parentId:folder,textContent:docHtml(p),contentMimeType:'text/html'}));
+  p.drive={id:f.id,url:f.viewUrl||('https://docs.google.com/document/d/'+f.id),title,at:now(),ver};p.driveErr='';
+}
+async function driveMark(p){
+  if(!mcp||!p.drive?.id)return;
+  const tag=p.status==='approved'?'[อนุมัติ] ':'[REJECT] ';
+  try{await mcp.callTool(DRIVE,'update_file',{fileId:p.drive.id,title:tag+p.drive.title,description:p.status==='rejected'?'RA Reject: '+p.rejectReason:'RA อนุมัติ '+fmt(now())})}
+  catch(e){note('อัปเดตสถานะในไฟล์ Drive ไม่สำเร็จ: '+driveMsg(e))}
+}
+function driveTag(p){
+  const fo=p.folder?.url?`<a class="dlink" href="${esc(p.folder.url)}" target="_blank" rel="noopener">โฟลเดอร์สินค้านี้ใน Drive ↗</a>`:'';
+  if(p.status==='draft')return fo;
+  if(p.drive?.url)return`${fo}<a class="dlink" href="${esc(p.drive.url)}" target="_blank" rel="noopener">ไฟล์สรุป ↗</a>`;
+  return`${fo}<span class="dwarn">${esc(p.driveErr||'ยังไม่ได้บันทึกไฟล์สรุปลง Drive')}</span> <button class="btn sm" data-act="drive-retry">บันทึกลง Drive</button>`;
+}
+function fileList(p,k,canDel){
+  const fs=files(p,k);
+  if(!fs.length)return canDel?'':'<div class="empty" style="margin-bottom:10px">ไม่มีไฟล์แนบ</div>';
+  return`<div class="files">${fs.map((f,i)=>{const t=f.type==='application/pdf'?['pdf','PDF']:/^image/.test(f.type)?['img','IMG']:['txt','TXT'];
+    return`<div class="file"><span class="ft ${t[0]}">${t[1]}</span><span class="fn">${esc(f.name)}<small>${kb(f.size||0)} · ${fmt(f.at)}</small></span>
+    <a href="${esc(f.url)}" target="_blank" rel="noopener">เปิดดู ↗</a>${canDel?`<button class="icon" data-act="rm-file" data-s="${k}" data-i="${i}" aria-label="เอาไฟล์ ${esc(f.name)} ออก">✕</button>`:''}</div>`}).join('')}</div>`;
+}
+function fileBox(p,k,lock){
+  return fileList(p,k,!lock)+(lock?'':`<label class="drop" data-drop="${k}"><b>${files(p,k).length?'+ แนบไฟล์เพิ่ม':'แนบไฟล์ '+SEC[k]}</b>
+    <span>ลากไฟล์มาวาง หรือคลิกเลือก · PDF รูปภาพ (JPG, PNG) หรือ .txt ไม่เกิน 16 MB · เก็บในโฟลเดอร์ชื่อสินค้าใน Drive</span>
+    <input type="file" multiple accept=".pdf,application/pdf,image/*,.txt,text/plain" data-up="${k}"></label>`)
+    +(uploading[k]?`<div class="upnow">กำลังอัปโหลดไป Google Drive… (${uploading[k]} ไฟล์)</div>`:'')
+    +(upErr[k]?`<div class="uperr">${esc(upErr[k])}</div>`:'');
+}
+
+/* ---------- side list ---------- */
+function renderSide(){
+  $('#seg').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.role===role));
+  let list=items;
+  if(role==='buy')$('#sideH').innerHTML=`<h2>รายการสินค้า</h2><button class="btn pri sm" data-act="new">+ สินค้าใหม่</button>`;
+  else{const c=items.filter(i=>i.status==='submitted').length;
+    $('#sideH').innerHTML=`<div class="tabs"><button data-f="submitted" aria-pressed="${raFilter==='submitted'}">รอตรวจ (${c})</button><button data-f="all" aria-pressed="${raFilter==='all'}">ทั้งหมด</button></div>`;
+    list=items.filter(i=>i.status!=='draft'&&(raFilter==='all'||i.status==='submitted'))}
+  const active=role==='buy'?cur?.id:sel;
+  $('#list').innerHTML=list.length?list.map(i=>`<button class="item" data-open="${esc(i.id)}" aria-current="${i.id===active}">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b>${esc(i.name||'(ยังไม่มีชื่อ)')}</b>${chip(i.status)}</div>
+    <small>อัปเดต ${fmt(i.updatedAt)}</small>${i.status==='rejected'&&i.rejectReason?`<div class="why">${esc(i.rejectReason)}</div>`:''}</button>`).join('')
+    :`<div class="empty">${role==='buy'?'ยังไม่มีรายการ กด “+ สินค้าใหม่” เพื่อเริ่ม':'ไม่มีสินค้ารอตรวจ'}</div>`;
+}
+
+/* ---------- purchasing form ---------- */
+function intro(){
+  $('#pane').innerHTML=`<div class="intro"><h2>ส่งสินค้าใหม่ให้ RA ตรวจ</h2>
+  <p class="meta">ต้องมีครบทั้ง 4 ส่วน ระบบจึงจะยอมให้กดส่ง ไฟล์ที่แนบจะถูกเก็บไว้ใน Google Drive</p>
+  <div class="req"><div><b>ชื่อสินค้า</b><span>ชื่อที่จะใช้บนเอกสารและฉลาก</span></div><div><b>Ingredient</b><span>แนบไฟล์ + กรอก % ของแต่ละวัตถุดิบ รวมต้องเท่ากับ 100%</span></div>
+  <div><b>Nutrition</b><span>แนบไฟล์ PDF รูปภาพ หรือข้อความ</span></div><div><b>Process Flow</b><span>แนบไฟล์ PDF รูปภาพ หรือข้อความ</span></div></div>
+  <button class="btn pri" data-act="new">+ สร้างรายการสินค้าใหม่</button></div>`;
+}
+function ckTag(k,c){return`<span class="ck ${c[k].ok?'y':'n'}" id="ck-${k}">${c[k].ok?'✓ ครบ':'ยังไม่ครบ'}</span>`}
+function renderForm(focusSel){
+  if(!cur){intro();return}
+  const p=cur,c=checks(p),lock=p.status==='submitted'||p.status==='approved',d=lock?'disabled':'';
+  $('#pane').innerHTML=`<div class="sheet">
+  <div class="sheet-h"><div>${chip(p.status)}<h2>${esc(p.name||'สินค้าใหม่')}</h2><div class="meta">สร้างโดย ${esc(who(p.createdBy))} · ${fmt(p.createdAt)}</div><div class="drv">${driveTag(p)}</div></div>
+   ${p.status==='draft'?`<button class="btn sm" data-act="del">${delArm?'กดอีกครั้งเพื่อยืนยันลบ':'ลบร่างนี้'}</button>`:''}</div>
+  ${p.status==='rejected'?`<div class="banner"><b>RA Reject กลับมา${p.rejectSections?.length?' — ส่วนที่ไม่ครบ: '+p.rejectSections.map(k=>SEC[k]).join(', '):''}</b>${esc(p.rejectReason)}<div style="font-size:13px;margin-top:4px">แก้ไขแล้วกดส่งให้ RA ใหม่ได้</div></div>`:''}
+  ${lock?`<div class="banner" style="background:var(--${p.status==='approved'?'okb':'warnb'});color:var(--${p.status==='approved'?'ok':'warn'})">${p.status==='approved'?'RA อนุมัติแล้ว แก้ไขไม่ได้':'ส่งให้ RA แล้ว กำลังรอตรวจ แก้ไขไม่ได้จนกว่า RA จะ Reject กลับ'}</div>`:''}
+  <div class="sec"><div class="sec-h"><h3>ชื่อสินค้า</h3>${ckTag('name',c)}</div>
+   <input type="text" id="f-name" data-f="name" value="${esc(p.name)}" placeholder="เช่น น้ำมะพร้าวพร้อมเนื้อมะพร้าว 350 ml" ${d}></div>
+  <div class="sec"><div class="sec-h"><h3>Ingredient</h3>${ckTag('ing',c)}</div>
+   ${fileBox(p,'ing',lock)}
+   <div class="sub-h">สัดส่วนวัตถุดิบตามไฟล์ (ใช้เช็คว่ารวมครบ 100%)</div>
+   <div class="rows"><div class="row r-ing r-head"><span>วัตถุดิบ</span><span>%</span><span></span></div>
+   ${p.ingredients.map((r,i)=>`<div class="row r-ing"><input type="text" data-a="ingredients" data-i="${i}" data-k="name" value="${esc(r.name)}" placeholder="ชื่อวัตถุดิบ" aria-label="วัตถุดิบ ${i+1}" ${d}>
+    <input type="number" inputmode="decimal" step="0.01" min="0" max="100" data-a="ingredients" data-i="${i}" data-k="pct" value="${esc(r.pct)}" placeholder="0.00" aria-label="% วัตถุดิบ ${i+1}" ${d}>
+    <button class="icon" data-act="del-ingredients" data-i="${i}" aria-label="ลบแถว" ${d||p.ingredients.length<2?'disabled':''}>✕</button></div>`).join('')}</div>
+   ${lock?'':`<button class="btn sm add" data-act="add-ingredients">+ เพิ่มวัตถุดิบ</button>`}
+   <div class="meter" id="meter"></div></div>
+  <div class="sec"><div class="sec-h"><h3>Nutrition</h3>${ckTag('nut',c)}</div>${fileBox(p,'nut',lock)}</div>
+  <div class="sec"><div class="sec-h"><h3>Process Flow</h3>${ckTag('flow',c)}</div>${fileBox(p,'flow',lock)}</div>
+  ${hist(p)}
+  ${lock?'':`<div class="bar"><ul class="miss" id="miss"></ul><div class="acts"><button class="btn" data-act="save">บันทึกร่าง</button><button class="btn pri" id="send" data-act="submit">ส่งให้ RA ตรวจ</button></div></div>`}
+  </div>`;
+  refresh();
+  if(focusSel){const el=$(focusSel);el&&el.focus()}
+}
+function refresh(){
+  if(!cur)return;
+  const c=checks(cur),s=sumIng(cur);
+  for(const k in c){const t=$('#ck-'+k);if(t){t.className='ck '+(c[k].ok?'y':'n');t.textContent=c[k].ok?'✓ ครบ':'ยังไม่ครบ'}}
+  const m=$('#meter');
+  if(m){const over=s>100.0005,ok=Math.abs(s-100)<0.001,col=ok?'var(--ok)':over?'var(--bad)':'var(--warn)';
+    m.innerHTML=`<div class="track"><div class="fill" style="width:${Math.min(s,100)}%;background:${col}"></div></div>
+    <div class="lab"><span>รวมทั้งหมด</span><span class="big" style="color:${col}">${s.toFixed(2)}%</span></div>
+    <div class="meta" style="color:${col}">${ok?'ครบ 100% พอดี':over?`เกินอยู่ ${(s-100).toFixed(2)}%`:`ขาดอีก ${(100-s).toFixed(2)}% จึงจะส่งให้ RA ได้`}</div>`}
+  const ms=$('#miss'),send=$('#send'),up=FSEC.some(k=>uploading[k]);
+  if(ms){const bad=Object.entries(c).filter(([,v])=>!v.ok);
+    ms.className='miss'+(bad.length?'':' okk');
+    ms.innerHTML=bad.length?bad.map(([k,v])=>`<li>✕ ${SEC[k]}: ${esc(v.msg)}</li>`).join(''):up?'<li>รออัปโหลดไฟล์ให้เสร็จก่อน</li>':'<li>✓ ข้อมูลครบทั้ง 4 ส่วน พร้อมส่ง</li>'}
+  if(send)send.disabled=!allOk(c)||up;
+}
+function hist(p){
+  const h=(p.history||[]).slice().reverse();
+  if(!h.length)return'';
+  const A={submit:'ส่งให้ RA',reject:'Reject',approve:'อนุมัติ'};
+  return`<div class="sec"><div class="sec-h"><h3>ประวัติ</h3></div><ul class="hist">${h.map(x=>`<li><b>${A[x.action]||x.action}</b> โดย ${esc(who(x.by))} · ${fmt(x.at)}${x.note?' — '+esc(x.note):''}</li>`).join('')}</ul></div>`;
+}
+
+/* ---------- RA review ---------- */
+function renderRA(){
+  const p=items.find(i=>i.id===sel);
+  if(!p){$('#pane').innerHTML=`<div class="intro"><h2>เลือกสินค้าที่จะตรวจ</h2><p class="meta">รายการที่จัดซื้อส่งมาจะขึ้นใน “รอตรวจ” ทางซ้าย เปิดไฟล์ Ingredient ตรวจทีละรายการ แล้วกด Approve หรือ Reject พร้อมเหตุผล</p></div>`;return}
+  const c=checks(p),s=sumIng(p),open=p.status==='submitted';
+  const stamp={rejected:['REJECT','bad'],approved:['APPROVED','ok'],submitted:['รอตรวจ','sub']}[p.status];
+  const dr=raDraft.id===p.id?raDraft:(raDraft={id:p.id,reason:'',secs:Object.keys(SEC).filter(k=>!c[k].ok),tick:{}});
+  const ings=(p.ingredients||[]).map((r,i)=>({...r,i})).sort((a,b)=>num(b.pct)-num(a.pct));
+  $('#pane').innerHTML=`<div class="sheet">${stamp?`<div class="stamp ${stamp[1]}">${stamp[0]}</div>`:''}
+  <div class="sheet-h"><div>${chip(p.status)}<h2 style="padding-right:120px">${esc(p.name||'(ยังไม่มีชื่อ)')}</h2>
+   <div class="meta">ส่งโดย ${esc(who(p.createdBy))} · อัปเดต ${fmt(p.updatedAt)}</div><div class="drv">${driveTag(p)}</div></div></div>
+  <div class="sec"><div class="sec-h"><h3>Ingredient</h3><span class="ck ${c.ing.ok?'y':'n'}">รวม ${s.toFixed(2)}%</span></div>
+   ${fileList(p,'ing',false)}
+   ${open?'<p class="meta" style="margin-top:0">เปิดไฟล์ด้านบน เทียบกับตาราง แล้วติ๊ก “ตรวจแล้ว” ให้ครบทุกแถวก่อนจึงจะกด Approve ได้</p>':''}
+   <table class="ingt"><thead><tr><th>#</th><th>วัตถุดิบ</th><th class="r">%</th>${open?'<th class="r">ตรวจแล้ว</th>':''}</tr></thead><tbody>
+   ${ings.map((r,k)=>`<tr class="${dr.tick[r.i]?'done':''}"><td>${k+1}</td><td>${esc(r.name)||'<span style="color:var(--bad)">ไม่มีชื่อ</span>'}</td><td class="r">${isNaN(num(r.pct))?'—':num(r.pct).toFixed(2)}</td>
+    ${open?`<td class="r"><input type="checkbox" class="tk" data-i="${r.i}" ${dr.tick[r.i]?'checked':''} aria-label="ตรวจ ${esc(r.name)} แล้ว"></td>`:''}</tr>`).join('')}
+   </tbody><tfoot><tr><td></td><td>รวม</td><td class="r" style="color:var(--${c.ing.ok?'ok':'bad'})">${s.toFixed(2)}</td>${open?'<td></td>':''}</tr></tfoot></table>
+   <p class="sample">เรียงจากมากไปน้อยตามสัดส่วน</p></div>
+  <div class="sec"><div class="sec-h"><h3>Nutrition</h3><span class="ck ${c.nut.ok?'y':'n'}">${files(p,'nut').length} ไฟล์</span></div>${fileList(p,'nut',false)}</div>
+  <div class="sec"><div class="sec-h"><h3>Process Flow</h3><span class="ck ${c.flow.ok?'y':'n'}">${files(p,'flow').length} ไฟล์</span></div>${fileList(p,'flow',false)}</div>
+  <div class="sec"><div class="sec-h"><h3>ผลตรวจความครบอัตโนมัติ</h3></div>
+   <div class="checks">${Object.entries(c).map(([k,v])=>`<div class="${v.ok?'y':'n'}">${v.ok?'✓':'✕'} ${SEC[k]}${v.ok?'':'<br>'+esc(v.msg)}</div>`).join('')}</div></div>
+  ${open?`<div class="sec" id="rsec"><div class="sec-h"><h3>เหตุผลถ้า Reject</h3></div><div class="decide">
+   <div class="meta">เลือกส่วนที่มีปัญหาและใส่เหตุผล เพื่อส่งกลับให้จัดซื้อแก้</div>
+   <div class="boxes">${Object.keys(SEC).map(k=>`<label><input type="checkbox" value="${k}" class="rs" ${dr.secs.includes(k)?'checked':''}>${SEC[k]}</label>`).join('')}</div>
+   <textarea id="reason" rows="3" placeholder="เช่น ไฟล์ Ingredient ไม่ระบุ % ของน้ำตาล, Process Flow ไม่มีขั้นตอนฆ่าเชื้อ">${esc(dr.reason)}</textarea>
+   <div class="meta" id="rhint" style="color:var(--bad)" hidden>ใส่เหตุผลก่อนกด Reject</div></div></div>`:''}
+  ${p.status==='rejected'?`<div class="banner" style="margin-bottom:16px"><b>Reject แล้ว${p.rejectSections?.length?' — '+p.rejectSections.map(k=>SEC[k]).join(', '):''}</b>${esc(p.rejectReason)}</div>`:''}
+  ${hist(p)}
+  ${open?`<div class="bar"><div class="meta" id="rastat"></div><div class="acts">
+   <button class="btn bad" data-act="reject">Reject</button><button class="btn pri" id="appr" data-act="approve">Approve อนุมัติ</button></div></div>`:''}</div>`;
+  raRefresh();
+}
+function raRefresh(){
+  const p=items.find(i=>i.id===sel),st=$('#rastat'),ap=$('#appr');if(!p||!st)return;
+  const c=checks(p),n=(p.ingredients||[]).length,t=Object.values(raDraft.tick).filter(Boolean).length,ok=allOk(c)&&t>=n;
+  st.innerHTML=!allOk(c)?'<span style="color:var(--bad)">ข้อมูลไม่ครบ อนุมัติไม่ได้ ต้อง Reject กลับ</span>'
+    :`ตรวจ Ingredient แล้ว <b>${t}/${n}</b>${t<n?' · ติ๊กให้ครบก่อนอนุมัติ':' · พร้อมอนุมัติ'}`;
+  ap.disabled=!ok;
+  document.querySelectorAll('.ingt tbody tr').forEach(tr=>{const x=tr.querySelector('.tk');if(x)tr.classList.toggle('done',x.checked)});
+}
+
+function render(){renderSide();role==='buy'?renderForm():renderRA()}
+
+/* ---------- events ---------- */
+$('#seg').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;role=b.dataset.role;try{localStorage.setItem('ra-role',role)}catch(_){}render()});
+$('#sideH').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.f){raFilter=b.dataset.f;renderSide()}
+  if(b.dataset.act==='new'){cur=blank();dirty=false;delArm=false;render();$('#f-name')?.focus()}});
+$('#list').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(!b)return;const p=items.find(i=>i.id===b.dataset.open);if(!p)return;
+  if(role==='buy'){cur=clone(p);dirty=false;delArm=false}else sel=p.id;render();if(innerWidth<860)$('#pane').scrollIntoView({behavior:'smooth'})});
+$('#pane').addEventListener('change',e=>{const t=e.target;if(t.dataset.up&&t.files?.length){addFiles(t.dataset.up,t.files);t.value=''}});
+$('#pane').addEventListener('dragover',e=>{const z=e.target.closest('[data-drop]');if(!z)return;e.preventDefault();z.classList.add('over')});
+$('#pane').addEventListener('dragleave',e=>{const z=e.target.closest('[data-drop]');if(z)z.classList.remove('over')});
+$('#pane').addEventListener('drop',e=>{const z=e.target.closest('[data-drop]');if(!z)return;e.preventDefault();z.classList.remove('over');if(e.dataTransfer?.files?.length)addFiles(z.dataset.drop,e.dataTransfer.files)});
+$('#pane').addEventListener('input',e=>{const t=e.target;
+  if(t.id==='reason'){raDraft.reason=t.value;if(t.value.trim())$('#rhint').hidden=true;return}
+  if(t.classList.contains('tk')){raDraft.tick[t.dataset.i]=t.checked;raRefresh();return}
+  if(t.classList.contains('rs')){raDraft.secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);return}
+  if(!cur||t.type==='file')return;
+  if(t.dataset.f)cur[t.dataset.f]=t.value;
+  else if(t.dataset.a){cur[t.dataset.a][+t.dataset.i][t.dataset.k]=t.value}
+  else return;
+  dirty=true;refresh();
+  if(t.dataset.f==='name'){const h=$('.sheet-h h2');if(h)h.textContent=t.value||'สินค้าใหม่'}});
+$('#pane').addEventListener('click',e=>{const b=e.target.closest('button[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,i=+b.dataset.i;
+  if(a==='new'){cur=blank();dirty=false;render();$('#f-name')?.focus();return}
+  if(a==='drive-retry'){const src=role==='buy'?cur:items.find(x=>x.id===sel);if(!src)return;
+    b.disabled=true;b.textContent='กำลังบันทึก…';
+    act(async()=>{const q=clone(src);try{await driveSave(q);if(q.status==='approved'||q.status==='rejected')await driveMark(q)}catch(e){q.driveErr=driveMsg(e)}
+      await save(q);if(role==='buy')cur=q;render()});return}
+  if(role==='ra'){const p=items.find(x=>x.id===sel);if(!p)return;
+    if(a==='reject'){const reason=$('#reason').value.trim();if(!reason){$('#rhint').hidden=false;$('#rsec').scrollIntoView({behavior:'smooth',block:'center'});$('#reason').focus({preventScroll:true});return}
+      const secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);
+      act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=me;q.reviewedAt=now();log(q,'reject',reason);await save(q);sel=q.id;render();await driveMark(q)})}
+    if(a==='approve'){if(!allOk(checks(p))||Object.values(raDraft.tick).filter(Boolean).length<(p.ingredients||[]).length)return;
+      act(async()=>{const q=clone(p);q.status='approved';q.rejectReason='';q.rejectSections=[];q.reviewedBy=me;q.reviewedAt=now();log(q,'approve');await save(q);render();await driveMark(q)})}
+    return}
+  if(!cur)return;
+  if(a==='rm-file'){const s=b.dataset.s;cur.files[s]=files(cur,s).filter((_,j)=>j!==i);dirty=true;renderForm()}
+  if(a==='add-ingredients'){cur.ingredients.push({name:'',pct:''});dirty=true;renderForm(`[data-a=ingredients][data-i="${cur.ingredients.length-1}"][data-k=name]`)}
+  if(a==='del-ingredients'){cur.ingredients.splice(i,1);dirty=true;renderForm()}
+  if(a==='save')act(async()=>{await save(cur);dirty=false;note('');renderSide();b.textContent='บันทึกแล้ว ✓';setTimeout(()=>{b.textContent='บันทึกร่าง'},1500)});
+  if(a==='submit'){if(!allOk(checks(cur))||FSEC.some(k=>uploading[k]))return;
+    act(async()=>{cur.status='submitted';cur.submittedAt=now();cur.drive=null;log(cur,'submit');await save(cur);dirty=false;render();
+      const q=clone(cur);
+      try{await driveSave(q)}catch(e){q.driveErr=driveMsg(e)}
+      await save(q);if(cur&&cur.id===q.id)cur=q;render()})}
+  if(a==='del'){if(!delArm){delArm=true;renderForm();return}
+    act(async()=>{const id=cur.id;if(db)await db.collection('products').doc(id).delete();else{mem.delete(id);items=[...mem.values()]}cur=null;delArm=false;render()})}
+});
+addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
+
+/* ---------- data ---------- */
+async function loadNames(){
+  if(!user?.profiles)return;
+  const ids=[...new Set(items.flatMap(i=>[i.createdBy,i.reviewedBy,...(i.history||[]).map(h=>h.by)]).filter(x=>x&&!(x in names)))];
+  if(!ids.length)return;
+  try{const ps=await user.profiles(ids);for(const id of ids)names[id]=ps?.[id]?.name||'';render()}catch(e){}
+}
+render();
+(async()=>{
+  try{user=await claude.use('user');me=user?await user.id():null}catch(e){}
+  try{mcp=await claude.use('mcp')}catch(e){mcp=null}
+  try{db=await claude.use('db')}catch(e){db=null}
+  if(!db){note('ตอนนี้เชื่อมฐานข้อมูลไม่ได้ ข้อมูลที่กรอกจะอยู่แค่ในหน้านี้และหายเมื่อปิด');items=[];renderSide();return}
+  const t=setTimeout(()=>note('ยังโหลดข้อมูลไม่ได้ อาจเป็นเพราะเครือข่าย ข้อมูลที่เห็นอาจไม่เป็นปัจจุบัน'),10000);
+  db.collection('products').onSnapshot(snap=>{
+    if(!snap.metadata.fromCache){clearTimeout(t);note('')}
+    items=snap.docs.map(d=>({...d.data(),id:d.id})).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    if(cur&&!dirty&&!FSEC.some(k=>uploading[k])){const f=items.find(i=>i.id===cur.id);if(f)cur=clone(f)}
+    if(role==='buy'&&FSEC.some(k=>uploading[k]))renderSide();else render();
+    loadNames();
+  },err=>{clearTimeout(t);note('โหลดข้อมูลไม่สำเร็จ ('+err.code+')')});
+})();
+}
+</script></body></html>
