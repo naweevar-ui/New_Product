@@ -131,7 +131,7 @@ tfoot td{font-weight:700;border-bottom:0}
 </style></head><body>
 <header class="top">
   <div><h1>ระบบตรวจสินค้าใหม่</h1><p>จัดซื้อกรอกชื่อและแนบไฟล์ครบ 3 ส่วน → เก็บใน Google Drive → RA ตรวจ → Approve หรือ Reject · <a href="https://drive.google.com/drive/folders/1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9" target="_blank" rel="noopener" style="color:#fff">โฟลเดอร์ Drive ↗</a></p></div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="setbtn" id="setbtn">⚙ ตั้งค่า</button><div class="seg" id="seg"><button data-role="buy" aria-pressed="false">ฝ่ายจัดซื้อ</button><button data-role="ra" aria-pressed="false">RA ตรวจสินค้า</button></div></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span id="who" style="color:#cfe3d4;font-size:14px"></span><button class="setbtn" id="setbtn">⚙ ตั้งค่า</button><div class="seg" id="seg"><button data-role="buy" aria-pressed="false">ฝ่ายจัดซื้อ</button><button data-role="ra" aria-pressed="false">RA ตรวจสินค้า</button></div></div>
 </header>
 <div id="setp" class="setp" hidden></div>
 <div id="note" class="note" hidden></div>
@@ -146,7 +146,7 @@ const FSEC=['ing','nut','flow'];
 /* ===== ตั้งค่า: วาง URL ของ Apps Script Web app ที่นี่ (ลงท้ายด้วย /exec) ===== */
 const API_URL_DEFAULT='https://script.google.com/macros/s/AKfycbzNK_b4Bf41LapTS9SAa3ukypdE0NmHFtoCgIhK2rS1cIgytk74tnrDSCITfRobNt0/exec';
 const MAXB=10*1024*1024;
-let cfg={api:API_URL_DEFAULT,key:'',me:''};
+let cfg={api:API_URL_DEFAULT,key:'',me:'',role:''};
 try{cfg={...cfg,...JSON.parse(localStorage.getItem('ra-cfg')||'{}')};if(!cfg.api)cfg.api=API_URL_DEFAULT}catch(e){}
 let raDraft={id:null,reason:'',secs:[],tick:{}},items=[],role='buy',sel=null,cur=null,dirty=false,raFilter='submitted',delArm=false,busy=false;
 const uploading={},upErr={},mem=new Map();
@@ -199,7 +199,7 @@ async function api(action,data){
 }
 function apiMsg(e){const c=e&&e.code;
   if(c==='no_api')return'ยังไม่ได้ใส่ URL ของ Apps Script กด ⚙ ตั้งค่า';
-  if(c==='bad_key'||c==='no_key')return(e.message||'รหัสทีมไม่ถูกต้อง')+' กด ⚙ ตั้งค่า';
+  if(c==='bad_key'||c==='no_key')return(e.message||'รหัสไม่ถูกต้อง')+' กด ⚙ ตั้งค่า';
   if(c==='network')return'ติดต่อ Apps Script ไม่ได้ ตรวจอินเทอร์เน็ต หรือ URL ใน ⚙ ตั้งค่า';
   if(c==='bad_response')return'Apps Script ตอบกลับผิดรูปแบบ ตรวจว่า Deploy เป็น Web app และตั้ง Who has access เป็น Anyone';
   return e&&e.message?e.message:'เกิดข้อผิดพลาด';}
@@ -263,7 +263,9 @@ function fileBox(p,k,lock){
 
 /* ---------- side list ---------- */
 function renderSide(){
-  $('#seg').querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.role===role));
+  if(cfg.role!=='ra'&&role==='ra')role='buy';
+  $('#seg').querySelectorAll('button').forEach(b=>{b.setAttribute('aria-pressed',b.dataset.role===role);if(b.dataset.role==='ra')b.hidden=cfg.role!=='ra'});
+  $('#who').textContent=cfg.role?`${cfg.me||''} · ${cfg.role==='ra'?'RA':'ฝ่ายจัดซื้อ'}`:'';
   let list=items;
   if(role==='buy')$('#sideH').innerHTML=`<h2>รายการสินค้า</h2><button class="btn pri sm" data-act="new">+ สินค้าใหม่</button>`;
   else{const c=items.filter(i=>i.status==='submitted').length;
@@ -402,7 +404,7 @@ $('#pane').addEventListener('input',e=>{const t=e.target;
   if(t.dataset.f==='name'){const h=$('.sheet-h h2');if(h)h.textContent=t.value||'สินค้าใหม่'}});
 $('#pane').addEventListener('click',e=>{const b=e.target.closest('button[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,i=+b.dataset.i;
   if(a==='new'){cur=blank();dirty=false;render();$('#f-name')?.focus();return}
-  if(role==='ra'){const p=items.find(x=>x.id===sel);if(!p)return;
+  if(role==='ra'){if(cfg.role!=='ra')return;const p=items.find(x=>x.id===sel);if(!p)return;
     if(a==='reject'){const reason=$('#reason').value.trim();if(!reason){$('#rhint').hidden=false;$('#rsec').scrollIntoView({behavior:'smooth',block:'center'});$('#reason').focus({preventScroll:true});return}
       const secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);
       act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'reject',reason);await save(q);sel=q.id;render()})}
@@ -428,7 +430,7 @@ function renderSet(open){
   const p=$('#setp');p.hidden=!open;if(!open)return;
   p.innerHTML=`<div class="grid">
    <label>ชื่อของคุณ (แสดงในประวัติ)<input type="text" id="s-me" value="${esc(cfg.me)}" placeholder="เช่น สมหญิง (จัดซื้อ)"></label>
-   <label>รหัสทีม (ได้จากผู้ดูแลระบบ)<input type="text" id="s-key" value="${esc(cfg.key)}" autocomplete="off"></label>
+   <label>รหัสเข้าใช้ (รหัสจัดซื้อ หรือรหัส RA)<input type="text" id="s-key" value="${esc(cfg.key)}" autocomplete="off"></label>
    <label>URL ของ Apps Script (ลงท้ายด้วย /exec)<input type="text" id="s-api" value="${esc(cfg.api)}" placeholder="https://script.google.com/macros/s/…/exec"></label></div>
    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="btn pri" id="s-save">บันทึกและเชื่อมต่อ</button><button class="btn" id="s-close">ปิด</button><span class="meta" id="s-msg"></span></div>`;
 }
@@ -436,10 +438,10 @@ $('#setbtn').addEventListener('click',()=>renderSet($('#setp').hidden));
 $('#setp').addEventListener('click',async e=>{
   if(e.target.id==='s-close'){renderSet(false);return}
   if(e.target.id!=='s-save')return;
-  cfg={api:$('#s-api').value.trim(),key:$('#s-key').value.trim(),me:$('#s-me').value.trim()};
+  cfg={api:$('#s-api').value.trim(),key:$('#s-key').value.trim(),me:$('#s-me').value.trim(),role:''};
   try{localStorage.setItem('ra-cfg',JSON.stringify(cfg))}catch(_){}
   $('#s-msg').textContent='กำลังเชื่อมต่อ…';
-  if(await load(true)){renderSet(false)}else $('#s-msg').textContent=$('#note').textContent;
+  if(await load(true)){if(cfg.role==='ra'){role='ra';try{localStorage.setItem('ra-role',role)}catch(_){}render()}renderSet(false)}else $('#s-msg').textContent=$('#note').textContent;
 });
 
 /* ---------- data ---------- */
@@ -450,6 +452,7 @@ async function load(force){
   loading=true;
   try{
     const r=await api('list');
+    if(r.role&&r.role!==cfg.role){cfg.role=r.role;try{localStorage.setItem('ra-cfg',JSON.stringify(cfg))}catch(_){}if(cfg.role!=='ra'&&role==='ra'){role='buy';force=true}}
     items=(r.items||[]).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
     note('');
     let repaint=false;

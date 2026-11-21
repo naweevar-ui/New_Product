@@ -11,12 +11,13 @@
  *       ├── Process Flow - ...
  *       └── <ชื่อสินค้า> v1 สรุปข้อมูล   (Google Doc สร้างตอนส่งให้ RA)
  *
- * ก่อนใช้งาน: เปลี่ยน TEAM_KEY เป็นรหัสของทีม แล้ว Deploy เป็น Web app
+ * ก่อนใช้งาน: ตั้ง TEAM_KEY (รหัสจัดซื้อ) และ RA_KEY (รหัส RA) แล้ว Deploy เป็น Web app
  * (Execute as: Me, Who has access: Anyone) — ดูขั้นตอนใน README.md
  */
 
 const ROOT_ID = '1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9'; // โฟลเดอร์ "RA ตรวจสินค้าใหม่"
-const TEAM_KEY = 'CHANGE-ME';                          // เปลี่ยนเป็นรหัสทีม (อย่าใส่รหัสจริงลง GitHub)
+const TEAM_KEY = 'CHANGE-ME';    // รหัสฝ่ายจัดซื้อ: สร้าง/แก้/ส่งงานได้ แต่ Approve/Reject ไม่ได้
+const RA_KEY = 'CHANGE-ME-RA';   // รหัส RA: ตรวจ และ Approve/Reject ได้ (ให้เฉพาะ RA) — อย่าใส่รหัสจริงลง GitHub
 const TZ = 'Asia/Bangkok';
 const SEC = { ing: 'Ingredient', nut: 'Nutrition', flow: 'Process Flow' };
 const HEAD = ['รหัส', 'ชื่อสินค้า', 'สถานะ', 'ผู้ส่ง', 'อัปเดตล่าสุด', 'Ingredient รวม %',
@@ -31,8 +32,10 @@ function doGet() {
 function doPost(e) {
   try {
     const req = JSON.parse(e.postData.contents);
-    if (TEAM_KEY === 'CHANGE-ME') return out({ ok: false, code: 'no_key', error: 'ยังไม่ได้ตั้งรหัสทีมใน Apps Script (TEAM_KEY)' });
-    if (req.key !== TEAM_KEY) return out({ ok: false, code: 'bad_key', error: 'รหัสทีมไม่ถูกต้อง' });
+    if (TEAM_KEY === 'CHANGE-ME' || RA_KEY === 'CHANGE-ME-RA' || TEAM_KEY === RA_KEY)
+      return out({ ok: false, code: 'no_key', error: 'ยังไม่ได้ตั้งรหัสใน Apps Script (TEAM_KEY และ RA_KEY ต้องตั้งและต้องไม่ซ้ำกัน)' });
+    const role = req.key === RA_KEY ? 'ra' : req.key === TEAM_KEY ? 'buy' : null;
+    if (!role) return out({ ok: false, code: 'bad_key', error: 'รหัสไม่ถูกต้อง' });
 
     // อัปโหลดไฟล์ไม่ต้องล็อก (ไม่แตะข้อมูลที่ใช้ร่วมกัน)
     if (req.action === 'upload') return out({ ok: true, file: upload(req) });
@@ -40,8 +43,8 @@ function doPost(e) {
     const lock = LockService.getScriptLock();
     lock.waitLock(30000);
     try {
-      if (req.action === 'list') return out({ ok: true, items: listItems() });
-      if (req.action === 'save') return out({ ok: true, item: saveItem(req.item) });
+      if (req.action === 'list') return out({ ok: true, role: role, items: listItems() });
+      if (req.action === 'save') return out({ ok: true, item: saveItem(req.item, role) });
       if (req.action === 'delete') { deleteItem(req.id); return out({ ok: true }); }
       return out({ ok: false, error: 'ไม่รู้จักคำสั่ง ' + req.action });
     } finally {
@@ -93,8 +96,25 @@ function findRow(sh, id) {
 }
 
 /* ---------- บันทึกสินค้า ---------- */
-function saveItem(item) {
+function saveItem(item, role) {
   if (!item || !item.id) throw new Error('ไม่มีรหัสสินค้า');
+  const shx = sheet();
+  const rx = findRow(shx, item.id);
+  let prev = null;
+  if (rx > 0) { try { prev = JSON.parse(shx.getRange(rx, HEAD.length).getValue()); } catch (e) { prev = null; } }
+  const was = prev ? prev.status : 'draft';
+  if (role === 'buy') {
+    // จัดซื้อ: แก้ได้เฉพาะร่าง/งานที่ถูก Reject และส่งได้แค่ "ร่าง" หรือ "ส่งให้ RA"
+    if (was !== 'draft' && was !== 'rejected') throw new Error('งานนี้ส่งให้ RA แล้ว แก้ไขไม่ได้');
+    if (item.status !== 'draft' && item.status !== 'submitted' && !(item.status === 'rejected' && was === 'rejected'))
+      throw new Error('เฉพาะ RA เท่านั้นที่ Approve หรือ Reject ได้');
+  } else if (prev && (item.status === 'approved' || item.status === 'rejected')) {
+    // RA ตัดสิน: เปลี่ยนได้แค่สถานะและผลตรวจ เนื้อหาที่จัดซื้อส่งมาคงเดิม
+    if (was !== 'submitted') throw new Error('งานนี้ไม่ได้อยู่ในสถานะรอ RA ตรวจ');
+    const keep = { status: item.status, rejectReason: item.rejectReason || '', rejectSections: item.rejectSections || [],
+      reviewedBy: item.reviewedBy || '', reviewedAt: item.reviewedAt || Date.now(), history: item.history || prev.history };
+    item = Object.assign({}, prev, keep);
+  }
   const name = String(item.name || '').trim();
   item.updatedAt = Date.now();
 
