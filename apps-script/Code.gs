@@ -20,7 +20,7 @@ const TEAM_KEY = 'CHANGE-ME';    // รหัสฝ่ายจัดซื้�
 const RA_KEY = 'CHANGE-ME-RA';   // รหัส RA: ตรวจ และ Approve/Reject ได้ (ให้เฉพาะ RA) — อย่าใส่รหัสจริงลง GitHub
 const TZ = 'Asia/Bangkok';
 const SEC = { ing: 'Ingredient', nut: 'Nutrition', flow: 'Process Flow' };
-const HEAD = ['รหัส', 'ชื่อสินค้า', 'สถานะ', 'ผู้ส่ง', 'อัปเดตล่าสุด', 'Ingredient รวม %',
+const HEAD = ['รหัส', 'ชื่อสินค้า', 'สถานะ', 'ผู้ส่ง', 'อัปเดตล่าสุด', 'ยืนยัน Ingredient 100%',
   'ไฟล์ Ingredient', 'ไฟล์ Nutrition', 'ไฟล์ Process Flow', 'ผู้ตรวจ (RA)', 'เหตุผล Reject',
   'โฟลเดอร์', 'ไฟล์สรุป', 'ข้อมูล (JSON)'];
 const STATUS = { draft: 'ร่าง', submitted: 'รอ RA ตรวจ', rejected: 'ถูก Reject', approved: 'อนุมัติแล้ว' };
@@ -151,9 +151,8 @@ function saveItem(item, role) {
 
   const sh = sheet();
   const files = k => ((item.files && item.files[k]) || []).map(f => f.name).join(', ');
-  const sum = (item.ingredients || []).reduce((a, r) => a + (parseFloat(r.pct) || 0), 0);
   const row = [item.id, name, STATUS[item.status] || item.status, item.createdBy || '', fmt(item.updatedAt),
-    Math.round(sum * 100) / 100, files('ing'), files('nut'), files('flow'), item.reviewedBy || '',
+    item.ing100 ? 'ยืนยันแล้ว' : 'ยังไม่ยืนยัน', files('ing'), files('nut'), files('flow'), item.reviewedBy || '',
     item.status === 'rejected' ? (item.rejectReason || '') : '',
     item.folder ? item.folder.url : '', item.drive ? item.drive.url : '', json];
   const r = findRow(sh, item.id);
@@ -199,14 +198,7 @@ function makeDoc(item, folder, ver) {
 
   b.appendParagraph('Ingredient').setHeading(H.HEADING2);
   fileList(b, item, 'ing');
-  const ings = (item.ingredients || []).slice().sort((a, c) => (parseFloat(c.pct) || 0) - (parseFloat(a.pct) || 0));
-  const sum = ings.reduce((a, r) => a + (parseFloat(r.pct) || 0), 0);
-  const rows = [['#', 'วัตถุดิบ', '%']]
-    .concat(ings.map((r, i) => [String(i + 1), String(r.name), (parseFloat(r.pct) || 0).toFixed(2)]))
-    .concat([['', 'รวม', sum.toFixed(2)]]);
-  const t = b.appendTable(rows);
-  t.getRow(0).editAsText().setBold(true);
-  t.getRow(rows.length - 1).editAsText().setBold(true);
+  b.appendParagraph(item.ing100 ? '✓ จัดซื้อยืนยันว่า Ingredient ในไฟล์รวมครบ 100%' : '✕ ยังไม่ได้ยืนยันว่า Ingredient รวมครบ 100%');
 
   b.appendParagraph('Nutrition').setHeading(H.HEADING2);
   fileList(b, item, 'nut');

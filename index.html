@@ -108,7 +108,9 @@ tfoot td{font-weight:700;border-bottom:0}
 .req div{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--soft)}
 .req b{display:block}.req span{font-size:14px;color:var(--mute)}
 .sample{font-size:13px;color:var(--mute)}
-.tk{width:22px;height:22px;accent-color:var(--ok);cursor:pointer}.ingt tr.done td{background:var(--okb)}
+.confirm{display:flex;gap:12px;align-items:flex-start;margin-top:12px;padding:14px 16px;border:2px solid var(--line);border-radius:12px;cursor:pointer;font-size:15px}
+.confirm.on{border-color:var(--ok);background:var(--okb)}.confirm small{color:var(--mute);font-size:13px}
+.confirm input{width:24px;height:24px;flex:none;margin-top:2px;accent-color:var(--ok);cursor:pointer}
 .drv{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px}
 .dlink{color:var(--leaf);font-weight:600}.dwarn{color:var(--warn)}
 @media (prefers-reduced-motion:reduce){.meter .fill{transition:none}}
@@ -162,17 +164,15 @@ const files=(p,k)=>(p.files&&p.files[k])||[];
 const kb=b=>b>=1048576?(b/1048576).toFixed(1)+' MB':Math.max(1,Math.round(b/1024))+' KB';
 
 function checks(p){
-  const ing=p.ingredients||[],s=sumIng(p);
-  const rows=ing.length>0&&ing.every(r=>String(r.name).trim()&&num(r.pct)>0);
   const fi=files(p,'ing').length>0;
   return{
     name:{ok:!!String(p.name||'').trim(),msg:'ยังไม่ได้กรอกชื่อสินค้า'},
-    ing:{ok:fi&&rows&&Math.abs(s-100)<0.001,msg:!fi?'ยังไม่ได้แนบไฟล์ Ingredient':!rows?'ทุกแถวต้องมีชื่อวัตถุดิบและ % มากกว่า 0':`รวม ${s}% ต้องเท่ากับ 100%`},
+    ing:{ok:fi&&p.ing100===true,msg:!fi?'ยังไม่ได้แนบไฟล์ Ingredient':'ยังไม่ได้ติ๊กยืนยันว่าในไฟล์รวมครบ 100%'},
     nut:{ok:files(p,'nut').length>0,msg:'ยังไม่ได้แนบไฟล์ Nutrition'},
     flow:{ok:files(p,'flow').length>0,msg:'ยังไม่ได้แนบไฟล์ Process Flow'}};
 }
 const allOk=c=>Object.values(c).every(x=>x.ok);
-const blank=()=>({id:'p'+now().toString(36)+Math.random().toString(36).slice(2,7),name:'',ingredients:[{name:'',pct:''}],files:{ing:[],nut:[],flow:[]},
+const blank=()=>({id:'p'+now().toString(36)+Math.random().toString(36).slice(2,7),name:'',ing100:false,files:{ing:[],nut:[],flow:[]},
   status:'draft',rejectReason:'',rejectSections:[],createdBy:cfg.me,createdAt:now(),updatedAt:now(),history:[]});
 const clone=o=>JSON.parse(JSON.stringify(o));
 
@@ -282,7 +282,7 @@ function renderSide(){
 function intro(){
   $('#pane').innerHTML=`<div class="intro"><h2>ส่งสินค้าใหม่ให้ RA ตรวจ</h2>
   <p class="meta">ต้องมีครบทั้ง 4 ส่วน ระบบจึงจะยอมให้กดส่ง ไฟล์และข้อมูลจะถูกเก็บใน Google Drive แยกโฟลเดอร์ตามชื่อสินค้า</p>
-  <div class="req"><div><b>ชื่อสินค้า</b><span>ชื่อที่จะใช้บนเอกสารและฉลาก</span></div><div><b>Ingredient</b><span>แนบไฟล์ + กรอก % ของแต่ละวัตถุดิบ รวมต้องเท่ากับ 100%</span></div>
+  <div class="req"><div><b>ชื่อสินค้า</b><span>ชื่อที่จะใช้บนเอกสารและฉลาก</span></div><div><b>Ingredient</b><span>แนบไฟล์ และติ๊กยืนยันว่ารวมครบ 100%</span></div>
   <div><b>Nutrition</b><span>แนบไฟล์ PDF รูปภาพ หรือข้อความ</span></div><div><b>Process Flow</b><span>แนบไฟล์ PDF รูปภาพ หรือข้อความ</span></div></div>
   <button class="btn pri" data-act="new">+ สร้างรายการสินค้าใหม่</button></div>`;
 }
@@ -299,13 +299,7 @@ function renderForm(focusSel){
    <input type="text" id="f-name" data-f="name" value="${esc(p.name)}" placeholder="เช่น น้ำมะพร้าวพร้อมเนื้อมะพร้าว 350 ml" ${d}></div>
   <div class="sec"><div class="sec-h"><h3>Ingredient</h3>${ckTag('ing',c)}</div>
    ${fileBox(p,'ing',lock)}
-   <div class="sub-h">สัดส่วนวัตถุดิบตามไฟล์ (ใช้เช็คว่ารวมครบ 100%)</div>
-   <div class="rows"><div class="row r-ing r-head"><span>วัตถุดิบ</span><span>%</span><span></span></div>
-   ${p.ingredients.map((r,i)=>`<div class="row r-ing"><input type="text" data-a="ingredients" data-i="${i}" data-k="name" value="${esc(r.name)}" placeholder="ชื่อวัตถุดิบ" aria-label="วัตถุดิบ ${i+1}" ${d}>
-    <input type="number" inputmode="decimal" step="0.01" min="0" max="100" data-a="ingredients" data-i="${i}" data-k="pct" value="${esc(r.pct)}" placeholder="0.00" aria-label="% วัตถุดิบ ${i+1}" ${d}>
-    <button class="icon" data-act="del-ingredients" data-i="${i}" aria-label="ลบแถว" ${d||p.ingredients.length<2?'disabled':''}>✕</button></div>`).join('')}</div>
-   ${lock?'':`<button class="btn sm add" data-act="add-ingredients">+ เพิ่มวัตถุดิบ</button>`}
-   <div class="meter" id="meter"></div></div>
+   <label class="confirm ${p.ing100?'on':''}"><input type="checkbox" id="ing100" ${p.ing100?'checked':''} ${d}><span><b>ยืนยันว่า Ingredient ในไฟล์รวมครบ 100%</b><br><small>ถ้าไม่ครบ 100% จะส่งให้ RA ไม่ได้</small></span></label></div>
   <div class="sec"><div class="sec-h"><h3>Nutrition</h3>${ckTag('nut',c)}</div>${fileBox(p,'nut',lock)}</div>
   <div class="sec"><div class="sec-h"><h3>Process Flow</h3>${ckTag('flow',c)}</div>${fileBox(p,'flow',lock)}</div>
   ${hist(p)}
@@ -316,13 +310,8 @@ function renderForm(focusSel){
 }
 function refresh(){
   if(!cur)return;
-  const c=checks(cur),s=sumIng(cur);
+  const c=checks(cur);
   for(const k in c){const t=$('#ck-'+k);if(t){t.className='ck '+(c[k].ok?'y':'n');t.textContent=c[k].ok?'✓ ครบ':'ยังไม่ครบ'}}
-  const m=$('#meter');
-  if(m){const over=s>100.0005,ok=Math.abs(s-100)<0.001,col=ok?'var(--ok)':over?'var(--bad)':'var(--warn)';
-    m.innerHTML=`<div class="track"><div class="fill" style="width:${Math.min(s,100)}%;background:${col}"></div></div>
-    <div class="lab"><span>รวมทั้งหมด</span><span class="big" style="color:${col}">${s.toFixed(2)}%</span></div>
-    <div class="meta" style="color:${col}">${ok?'ครบ 100% พอดี':over?`เกินอยู่ ${(s-100).toFixed(2)}%`:`ขาดอีก ${(100-s).toFixed(2)}% จึงจะส่งให้ RA ได้`}</div>`}
   const ms=$('#miss'),send=$('#send'),up=FSEC.some(k=>uploading[k]);
   if(ms){const bad=Object.entries(c).filter(([,v])=>!v.ok);
     ms.className='miss'+(bad.length?'':' okk');
@@ -339,22 +328,16 @@ function hist(p){
 /* ---------- RA review ---------- */
 function renderRA(){
   const p=items.find(i=>i.id===sel);
-  if(!p){$('#pane').innerHTML=`<div class="intro"><h2>เลือกสินค้าที่จะตรวจ</h2><p class="meta">รายการที่จัดซื้อส่งมาจะขึ้นใน “รอตรวจ” ทางซ้าย เปิดไฟล์ Ingredient ตรวจทีละรายการ แล้วกด Approve หรือ Reject พร้อมเหตุผล</p></div>`;return}
-  const c=checks(p),s=sumIng(p),open=p.status==='submitted';
+  if(!p){$('#pane').innerHTML=`<div class="intro"><h2>เลือกสินค้าที่จะตรวจ</h2><p class="meta">รายการที่จัดซื้อส่งมาจะขึ้นใน “รอตรวจ” ทางซ้าย เปิดไฟล์ Ingredient ตรวจ แล้วกด Approve หรือ Reject พร้อมเหตุผล</p></div>`;return}
+  const c=checks(p),open=p.status==='submitted';
   const stamp={rejected:['REJECT','bad'],approved:['APPROVED','ok'],submitted:['รอตรวจ','sub']}[p.status];
-  const dr=raDraft.id===p.id?raDraft:(raDraft={id:p.id,reason:'',secs:Object.keys(SEC).filter(k=>!c[k].ok),tick:{}});
-  const ings=(p.ingredients||[]).map((r,i)=>({...r,i})).sort((a,b)=>num(b.pct)-num(a.pct));
+  const dr=raDraft.id===p.id?raDraft:(raDraft={id:p.id,reason:'',secs:Object.keys(SEC).filter(k=>!c[k].ok),ingOk:false});
   $('#pane').innerHTML=`<div class="sheet">${stamp?`<div class="stamp ${stamp[1]}">${stamp[0]}</div>`:''}
   <div class="sheet-h"><div>${chip(p.status)}<h2 style="padding-right:120px">${esc(p.name||'(ยังไม่มีชื่อ)')}</h2>
    <div class="meta">ส่งโดย ${esc(who(p.createdBy))} · อัปเดต ${fmt(p.updatedAt)}</div><div class="drv">${driveTag(p)}</div></div></div>
-  <div class="sec"><div class="sec-h"><h3>Ingredient</h3><span class="ck ${c.ing.ok?'y':'n'}">รวม ${s.toFixed(2)}%</span></div>
+  <div class="sec"><div class="sec-h"><h3>Ingredient</h3><span class="ck ${c.ing.ok?'y':'n'}">${p.ing100?'จัดซื้อยืนยันครบ 100%':'ยังไม่ยืนยัน 100%'}</span></div>
    ${fileList(p,'ing',false)}
-   ${open?'<p class="meta" style="margin-top:0">เปิดไฟล์ด้านบน เทียบกับตาราง แล้วติ๊ก “ตรวจแล้ว” ให้ครบทุกแถวก่อนจึงจะกด Approve ได้</p>':''}
-   <table class="ingt"><thead><tr><th>#</th><th>วัตถุดิบ</th><th class="r">%</th>${open?'<th class="r">ตรวจแล้ว</th>':''}</tr></thead><tbody>
-   ${ings.map((r,k)=>`<tr class="${dr.tick[r.i]?'done':''}"><td>${k+1}</td><td>${esc(r.name)||'<span style="color:var(--bad)">ไม่มีชื่อ</span>'}</td><td class="r">${isNaN(num(r.pct))?'—':num(r.pct).toFixed(2)}</td>
-    ${open?`<td class="r"><input type="checkbox" class="tk" data-i="${r.i}" ${dr.tick[r.i]?'checked':''} aria-label="ตรวจ ${esc(r.name)} แล้ว"></td>`:''}</tr>`).join('')}
-   </tbody><tfoot><tr><td></td><td>รวม</td><td class="r" style="color:var(--${c.ing.ok?'ok':'bad'})">${s.toFixed(2)}</td>${open?'<td></td>':''}</tr></tfoot></table>
-   <p class="sample">เรียงจากมากไปน้อยตามสัดส่วน</p></div>
+   ${open?`<label class="confirm ${dr.ingOk?'on':''}"><input type="checkbox" id="raIng" ${dr.ingOk?'checked':''}><span><b>RA ตรวจไฟล์ Ingredient แล้ว ครบ 100% และถูกต้อง</b><br><small>ต้องติ๊กก่อนจึงจะกด Approve ได้</small></span></label>`:''}</div>
   <div class="sec"><div class="sec-h"><h3>Nutrition</h3><span class="ck ${c.nut.ok?'y':'n'}">${files(p,'nut').length} ไฟล์</span></div>${fileList(p,'nut',false)}</div>
   <div class="sec"><div class="sec-h"><h3>Process Flow</h3><span class="ck ${c.flow.ok?'y':'n'}">${files(p,'flow').length} ไฟล์</span></div>${fileList(p,'flow',false)}</div>
   <div class="sec"><div class="sec-h"><h3>ผลตรวจความครบอัตโนมัติ</h3></div>
@@ -372,11 +355,11 @@ function renderRA(){
 }
 function raRefresh(){
   const p=items.find(i=>i.id===sel),st=$('#rastat'),ap=$('#appr');if(!p||!st)return;
-  const c=checks(p),n=(p.ingredients||[]).length,t=Object.values(raDraft.tick).filter(Boolean).length,ok=allOk(c)&&t>=n;
+  const c=checks(p),ok=allOk(c)&&raDraft.ingOk;
   st.innerHTML=!allOk(c)?'<span style="color:var(--bad)">ข้อมูลไม่ครบ อนุมัติไม่ได้ ต้อง Reject กลับ</span>'
-    :`ตรวจ Ingredient แล้ว <b>${t}/${n}</b>${t<n?' · ติ๊กให้ครบก่อนอนุมัติ':' · พร้อมอนุมัติ'}`;
+    :raDraft.ingOk?'✓ ตรวจ Ingredient แล้ว · พร้อมอนุมัติ':'ติ๊ก “RA ตรวจไฟล์ Ingredient แล้ว” ก่อนกด Approve';
   ap.disabled=!ok;
-  document.querySelectorAll('.ingt tbody tr').forEach(tr=>{const x=tr.querySelector('.tk');if(x)tr.classList.toggle('done',x.checked)});
+  const l=$('#raIng')?.closest('.confirm');if(l)l.classList.toggle('on',!!raDraft.ingOk);
 }
 
 function render(){renderSide();role==='buy'?renderForm():renderRA()}
@@ -394,7 +377,8 @@ $('#pane').addEventListener('dragleave',e=>{const z=e.target.closest('[data-drop
 $('#pane').addEventListener('drop',e=>{const z=e.target.closest('[data-drop]');if(!z)return;e.preventDefault();z.classList.remove('over');if(e.dataTransfer?.files?.length)addFiles(z.dataset.drop,e.dataTransfer.files)});
 $('#pane').addEventListener('input',e=>{const t=e.target;
   if(t.id==='reason'){raDraft.reason=t.value;if(t.value.trim())$('#rhint').hidden=true;return}
-  if(t.classList.contains('tk')){raDraft.tick[t.dataset.i]=t.checked;raRefresh();return}
+  if(t.id==='raIng'){raDraft.ingOk=t.checked;raRefresh();return}
+  if(t.id==='ing100'&&cur){cur.ing100=t.checked;dirty=true;t.closest('.confirm').classList.toggle('on',t.checked);refresh();return}
   if(t.classList.contains('rs')){raDraft.secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);return}
   if(!cur||t.type==='file')return;
   if(t.dataset.f)cur[t.dataset.f]=t.value;
@@ -408,7 +392,7 @@ $('#pane').addEventListener('click',e=>{const b=e.target.closest('button[data-ac
     if(a==='reject'){const reason=$('#reason').value.trim();if(!reason){$('#rhint').hidden=false;$('#rsec').scrollIntoView({behavior:'smooth',block:'center'});$('#reason').focus({preventScroll:true});return}
       const secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);
       act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'reject',reason);await save(q);sel=q.id;render()})}
-    if(a==='approve'){if(!allOk(checks(p))||Object.values(raDraft.tick).filter(Boolean).length<(p.ingredients||[]).length)return;
+    if(a==='approve'){if(!allOk(checks(p))||!raDraft.ingOk)return;
       act(async()=>{const q=clone(p);q.status='approved';q.rejectReason='';q.rejectSections=[];q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'approve');await save(q);render()})}
     return}
   if(!cur)return;
