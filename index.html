@@ -123,12 +123,17 @@ tfoot td{font-weight:700;border-bottom:0}
 .drop input{position:absolute;width:1px;height:1px;opacity:0}
 .drop:focus-within{outline:3px solid color-mix(in srgb,var(--leaf) 60%,transparent)}
 .uperr{color:var(--bad);font-size:14px;margin-top:6px}.upnow{color:var(--warn);font-size:14px;margin-top:6px}
+.setbtn{border:1px solid rgba(255,255,255,.35);background:none;color:#f1f6f1;border-radius:10px;padding:8px 14px;min-height:44px;cursor:pointer}
+.setp{background:var(--paper);border-bottom:1px solid var(--line);padding:18px max(4vw,16px)}
+.setp .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;max-width:1240px}
+.setp label{font-size:14px;color:var(--mute);display:flex;flex-direction:column;gap:4px}
 .sub-h{font-size:15px;font-weight:600;margin:16px 0 8px}
 </style></head><body>
 <header class="top">
   <div><h1>ระบบตรวจสินค้าใหม่</h1><p>จัดซื้อกรอกชื่อและแนบไฟล์ครบ 3 ส่วน → เก็บใน Google Drive → RA ตรวจ → Approve หรือ Reject · <a href="https://drive.google.com/drive/folders/1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9" target="_blank" rel="noopener" style="color:#fff">โฟลเดอร์ Drive ↗</a></p></div>
-  <div class="seg" id="seg"><button data-role="buy" aria-pressed="false">ฝ่ายจัดซื้อ</button><button data-role="ra" aria-pressed="false">RA ตรวจสินค้า</button></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><button class="setbtn" id="setbtn">⚙ ตั้งค่า</button><div class="seg" id="seg"><button data-role="buy" aria-pressed="false">ฝ่ายจัดซื้อ</button><button data-role="ra" aria-pressed="false">RA ตรวจสินค้า</button></div></div>
 </header>
+<div id="setp" class="setp" hidden></div>
 <div id="note" class="note" hidden></div>
 <main class="wrap"><aside class="side"><div class="side-h" id="sideH"></div><div class="rows" id="list"><div class="empty">กำลังโหลดข้อมูล…</div></div></aside><section id="pane"></section></main>
 <script>
@@ -138,15 +143,19 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const ST={draft:['ร่าง','s-draft'],submitted:['รอ RA ตรวจ','s-sub'],rejected:['ถูก Reject','s-rej'],approved:['อนุมัติแล้ว','s-ok']};
 const SEC={name:'ชื่อสินค้า',ing:'Ingredient',nut:'Nutrition',flow:'Process Flow'};
 const FSEC=['ing','nut','flow'];
-const DRIVE='Google Drive',FOLDER='1BEopI-OxSE1of60Zzutl9jUX_uBPF9g9',MAXB=16*1024*1024;
-let raDraft={id:null,reason:'',secs:[],tick:{}},db=null,user=null,me=null,mcp=null,fileArgs=null,items=[],names={},role='buy',sel=null,cur=null,dirty=false,raFilter='submitted',delArm=false,busy=false;
+/* ===== ตั้งค่า: วาง URL ของ Apps Script Web app ที่นี่ (ลงท้ายด้วย /exec) ===== */
+const API_URL_DEFAULT='';
+const MAXB=10*1024*1024;
+let cfg={api:API_URL_DEFAULT,key:'',me:''};
+try{cfg={...cfg,...JSON.parse(localStorage.getItem('ra-cfg')||'{}')};if(!cfg.api)cfg.api=API_URL_DEFAULT}catch(e){}
+let raDraft={id:null,reason:'',secs:[],tick:{}},items=[],role='buy',sel=null,cur=null,dirty=false,raFilter='submitted',delArm=false,busy=false;
 const uploading={},upErr={},mem=new Map();
 try{role=localStorage.getItem('ra-role')==='ra'?'ra':'buy'}catch(e){}
 const now=()=>Date.now();
 const fmt=t=>t?new Date(t).toLocaleString('th-TH',{dateStyle:'medium',timeStyle:'short'}):'';
 const num=v=>{const n=parseFloat(v);return isFinite(n)?n:NaN};
 const sumIng=p=>Math.round((p.ingredients||[]).reduce((a,r)=>a+(num(r.pct)||0),0)*1000)/1000;
-const who=id=>id?(names[id]||'ผู้ใช้'):'ผู้ใช้';
+const who=n=>n||'ไม่ระบุชื่อ';
 const chip=s=>`<span class="chip ${ST[s]?.[1]||'s-draft'}">${ST[s]?.[0]||s}</span>`;
 const note=t=>{const n=$('#note');n.hidden=!t;n.textContent=t||''};
 const files=(p,k)=>(p.files&&p.files[k])||[];
@@ -164,103 +173,78 @@ function checks(p){
 }
 const allOk=c=>Object.values(c).every(x=>x.ok);
 const blank=()=>({id:'p'+now().toString(36)+Math.random().toString(36).slice(2,7),name:'',ingredients:[{name:'',pct:''}],files:{ing:[],nut:[],flow:[]},
-  status:'draft',rejectReason:'',rejectSections:[],createdBy:me,createdAt:now(),updatedAt:now(),history:[]});
+  status:'draft',rejectReason:'',rejectSections:[],createdBy:cfg.me,createdAt:now(),updatedAt:now(),history:[]});
 const clone=o=>JSON.parse(JSON.stringify(o));
 
 async function save(p){
   p.updatedAt=now();
   const body=clone(p);const id=body.id;delete body.id;
-  if(db){await db.collection('products').doc(id).set(body)}
-  else{mem.set(id,{...body,id});items=[...mem.values()].sort((a,b)=>b.updatedAt-a.updatedAt);renderSide()}
+  const r=await api('save',{item:{...body,id}});
+  const it=r.item;p.folder=it.folder||null;p.drive=it.drive||null;p.updatedAt=it.updatedAt;
+  items=[it,...items.filter(x=>x.id!==it.id)].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  renderSide();return it;
 }
-async function act(fn){if(busy)return;busy=true;try{await fn()}catch(e){note('บันทึกไม่สำเร็จ: '+(e&&e.message||e)+' — ลองใหม่อีกครั้ง')}finally{busy=false}}
-const log=(p,action,txt)=>{p.history=[...(p.history||[]),{at:now(),by:me,action,note:txt||''}]};
+async function act(fn){if(busy)return;busy=true;try{await fn()}catch(e){note('บันทึกไม่สำเร็จ: '+apiMsg(e))}finally{busy=false}}
+const log=(p,action,txt)=>{p.history=[...(p.history||[]),{at:now(),by:cfg.me,action,note:txt||''}]};
 
-/* ---------- Google Drive ---------- */
-function driveMsg(e){const c=e&&e.code;
-  if(c==='needs_reauth')return'การเชื่อม Google Drive หมดอายุ ให้เชื่อมใหม่ที่ claude.ai Settings → Connectors';
-  if(c==='server_not_connected'||c==='selection_required')return'ยังไม่ได้เชื่อม Google Drive ให้เพิ่มที่ claude.ai Settings → Connectors';
-  if(c==='not_in_manifest'||c==='approval_required')return'ยังไม่ได้อนุญาตให้หน้านี้ใช้ Google Drive ลองอีกครั้งแล้วกดอนุญาต';
-  if(c==='tool_error')return'Drive ไม่ยอมบันทึก อาจยังไม่มีสิทธิ์แก้ไขในโฟลเดอร์ RA ตรวจสินค้าใหม่';
-  if(c==='server_unavailable'||c==='upstream_error')return'ติดต่อ Drive ไม่ได้ชั่วคราว ไฟล์อาจถูกสร้างแล้ว ให้ตรวจในโฟลเดอร์ก่อนลองใหม่';
-  if(c==='too_big')return'ไฟล์ใหญ่เกินกว่าที่หน้านี้ส่งได้ ลองย่อขนาดไฟล์';
-  return'บันทึกลง Drive ไม่สำเร็จ'+(c?' ('+c+')':'');}
-const fid=r=>{const f=r&&r.payload||{};if(!f.id)throw{code:'tool_error'};return f};
+/* ---------- Apps Script API ---------- */
+async function api(action,data){
+  if(!cfg.api)throw{code:'no_api'};
+  let res;
+  try{res=await fetch(cfg.api,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,key:cfg.key,by:cfg.me,...data})})}
+  catch(e){throw{code:'network'}}
+  let j;try{j=await res.json()}catch(e){throw{code:'bad_response'}}
+  if(!j.ok)throw{code:j.code||'server',message:j.error};
+  return j;
+}
+function apiMsg(e){const c=e&&e.code;
+  if(c==='no_api')return'ยังไม่ได้ใส่ URL ของ Apps Script กด ⚙ ตั้งค่า';
+  if(c==='bad_key'||c==='no_key')return(e.message||'รหัสทีมไม่ถูกต้อง')+' กด ⚙ ตั้งค่า';
+  if(c==='network')return'ติดต่อ Apps Script ไม่ได้ ตรวจอินเทอร์เน็ต หรือ URL ใน ⚙ ตั้งค่า';
+  if(c==='bad_response')return'Apps Script ตอบกลับผิดรูปแบบ ตรวจว่า Deploy เป็น Web app และตั้ง Who has access เป็น Anyone';
+  return e&&e.message?e.message:'เกิดข้อผิดพลาด';}
 async function ensureFolder(p){
   if(p.folder?.id)return p.folder.id;
-  if(!mcp)throw{code:'server_not_connected'};
-  const f=fid(await mcp.callTool(DRIVE,'create_file',{title:p.name.trim(),parentId:FOLDER,contentMimeType:'application/vnd.google-apps.folder'}));
-  p.folder={id:f.id,url:f.viewUrl||('https://drive.google.com/drive/folders/'+f.id),name:p.name.trim()};
-  return f.id;
+  await save(p);
+  if(!p.folder?.id)throw{code:'server',message:'สร้างโฟลเดอร์สินค้าใน Drive ไม่สำเร็จ'};
+  return p.folder.id;
 }
 function ftype(file){
   const n=file.name.toLowerCase();
   if(file.type==='application/pdf'||n.endsWith('.pdf'))return'application/pdf';
-  if(/^image\//.test(file.type))return file.type;
-  if(/\.(png)$/.test(n))return'image/png';if(/\.(jpe?g)$/.test(n))return'image/jpeg';
+  if(/^image\/(png|jpeg|gif|webp|heic)$/.test(file.type))return file.type;
+  if(/\.png$/.test(n))return'image/png';if(/\.jpe?g$/.test(n))return'image/jpeg';
   if(file.type==='text/plain'||n.endsWith('.txt'))return'text/plain';
   return'';
 }
 const b64=file=>new Promise((ok,no)=>{const r=new FileReader();r.onload=()=>ok(String(r.result).split(',')[1]);r.onerror=()=>no(r.error);r.readAsDataURL(file)});
 async function uploadFile(p,sec,file){
-  const type=ftype(file);
-  const folder=await ensureFolder(p);
-  if(fileArgs===null){try{fileArgs=!!(await mcp.listTools()).fileArgs}catch(e){fileArgs=false}}
-  let content;
-  if(fileArgs)content={$file:{data:file,name:file.name,type}};
-  else{if(file.size>700*1024)throw{code:'too_big'};content=await b64(file)}
-  const f=fid(await mcp.callTool(DRIVE,'create_file',{title:`${SEC[sec]} - ${file.name}`,parentId:folder,base64Content:content,contentMimeType:type,disableConversionToGoogleType:true}));
-  return{id:f.id,url:f.viewUrl||('https://drive.google.com/file/d/'+f.id+'/view'),name:file.name,type,size:file.size,at:now(),by:me};
+  const folderId=await ensureFolder(p);
+  const r=await api('upload',{folderId,sec,fileName:file.name,mimeType:ftype(file),data:await b64(file)});
+  return r.file;
 }
 async function addFiles(sec,list){
   if(!cur)return;
   upErr[sec]='';
   if(!String(cur.name||'').trim()){upErr[sec]='กรอกชื่อสินค้าก่อนแนบไฟล์ เพื่อใช้ตั้งชื่อโฟลเดอร์สินค้าใน Drive';renderForm();$('#f-name')?.focus();return}
-  const ok=[...list].filter(f=>{if(!ftype(f)){upErr[sec]=`“${f.name}” ไม่ใช่ PDF รูปภาพ หรือไฟล์ข้อความ`;return false}if(f.size>MAXB){upErr[sec]=`“${f.name}” ใหญ่เกิน 16 MB`;return false}return true});
+  if(!cfg.api||!cfg.key){upErr[sec]=apiMsg({code:cfg.api?'bad_key':'no_api'});renderForm();return}
+  const ok=[...list].filter(f=>{if(!ftype(f)){upErr[sec]=`“${f.name}” ไม่ใช่ PDF รูปภาพ หรือไฟล์ข้อความ`;return false}if(f.size>MAXB){upErr[sec]=`“${f.name}” ใหญ่เกิน 10 MB`;return false}return true});
   if(!ok.length){renderForm();return}
-  if(!mcp){upErr[sec]=driveMsg({code:'server_not_connected'});renderForm();return}
   uploading[sec]=ok.length;renderForm();
   const p=cur;
   for(const f of ok){
     try{const meta=await uploadFile(p,sec,f);p.files=p.files||{ing:[],nut:[],flow:[]};p.files[sec]=[...files(p,sec),meta]}
-    catch(e){upErr[sec]=`อัปโหลด “${f.name}” ไม่สำเร็จ: ${driveMsg(e)}`}
+    catch(e){upErr[sec]=`อัปโหลด “${f.name}” ไม่สำเร็จ: ${apiMsg(e)}`}
     uploading[sec]--;
   }
   uploading[sec]=0;
   try{await save(p);dirty=false}catch(e){note('บันทึกรายการไม่สำเร็จ แต่ไฟล์อยู่ใน Drive แล้ว กด “บันทึกร่าง” อีกครั้ง')}
   if(cur===p)renderForm();
 }
-function docHtml(p){
-  const s=sumIng(p),A={submit:'ส่งให้ RA',reject:'Reject',approve:'อนุมัติ'},td='style="border:1px solid #999;padding:4px 8px"';
-  const fl=k=>`<ul>${files(p,k).map(f=>`<li><a href="${esc(f.url)}">${esc(f.name)}</a></li>`).join('')}</ul>`;
-  return`<html><head><meta charset="utf-8"></head><body><h1>${esc(p.name)}</h1>
-  <p>สถานะ: ${ST[p.status]?.[0]||p.status} · ส่งโดย ${esc(who(p.createdBy))} · ${fmt(p.submittedAt||now())}</p>
-  <h2>Ingredient</h2>${fl('ing')}<table style="border-collapse:collapse"><tr><th ${td}>#</th><th ${td}>วัตถุดิบ</th><th ${td}>%</th></tr>
-  ${p.ingredients.slice().sort((a,b)=>num(b.pct)-num(a.pct)).map((r,i)=>`<tr><td ${td}>${i+1}</td><td ${td}>${esc(r.name)}</td><td ${td}>${num(r.pct).toFixed(2)}</td></tr>`).join('')}
-  <tr><td ${td}></td><td ${td}><b>รวม</b></td><td ${td}><b>${s.toFixed(2)}</b></td></tr></table>
-  <h2>Nutrition</h2>${fl('nut')}<h2>Process Flow</h2>${fl('flow')}
-  <h2>ประวัติ</h2><ul>${(p.history||[]).map(h=>`<li>${A[h.action]||h.action} โดย ${esc(who(h.by))} · ${fmt(h.at)}${h.note?' — '+esc(h.note):''}</li>`).join('')}</ul></body></html>`;
-}
-async function driveSave(p){
-  if(!mcp)throw{code:'server_not_connected'};
-  const ver=(p.history||[]).filter(h=>h.action==='submit').length||1;
-  const title=`${p.name} v${ver} สรุปข้อมูล (ส่ง RA ${new Date(p.submittedAt||now()).toLocaleDateString('th-TH')})`;
-  const folder=await ensureFolder(p);
-  if(p.folder.name!==p.name.trim()){try{await mcp.callTool(DRIVE,'update_file',{fileId:folder,title:p.name.trim()});p.folder.name=p.name.trim()}catch(e){}}
-  const f=fid(await mcp.callTool(DRIVE,'create_file',{title,parentId:folder,textContent:docHtml(p),contentMimeType:'text/html'}));
-  p.drive={id:f.id,url:f.viewUrl||('https://docs.google.com/document/d/'+f.id),title,at:now(),ver};p.driveErr='';
-}
-async function driveMark(p){
-  if(!mcp||!p.drive?.id)return;
-  const tag=p.status==='approved'?'[อนุมัติ] ':'[REJECT] ';
-  try{await mcp.callTool(DRIVE,'update_file',{fileId:p.drive.id,title:tag+p.drive.title,description:p.status==='rejected'?'RA Reject: '+p.rejectReason:'RA อนุมัติ '+fmt(now())})}
-  catch(e){note('อัปเดตสถานะในไฟล์ Drive ไม่สำเร็จ: '+driveMsg(e))}
-}
 function driveTag(p){
   const fo=p.folder?.url?`<a class="dlink" href="${esc(p.folder.url)}" target="_blank" rel="noopener">โฟลเดอร์สินค้านี้ใน Drive ↗</a>`:'';
-  if(p.status==='draft')return fo;
-  if(p.drive?.url)return`${fo}<a class="dlink" href="${esc(p.drive.url)}" target="_blank" rel="noopener">ไฟล์สรุป ↗</a>`;
-  return`${fo}<span class="dwarn">${esc(p.driveErr||'ยังไม่ได้บันทึกไฟล์สรุปลง Drive')}</span> <button class="btn sm" data-act="drive-retry">บันทึกลง Drive</button>`;
+  const dc=p.drive?.url?`<a class="dlink" href="${esc(p.drive.url)}" target="_blank" rel="noopener">เอกสารสรุป ↗</a>`:'';
+  return fo+dc;
 }
 function fileList(p,k,canDel){
   const fs=files(p,k);
@@ -271,7 +255,7 @@ function fileList(p,k,canDel){
 }
 function fileBox(p,k,lock){
   return fileList(p,k,!lock)+(lock?'':`<label class="drop" data-drop="${k}"><b>${files(p,k).length?'+ แนบไฟล์เพิ่ม':'แนบไฟล์ '+SEC[k]}</b>
-    <span>ลากไฟล์มาวาง หรือคลิกเลือก · PDF รูปภาพ (JPG, PNG) หรือ .txt ไม่เกิน 16 MB · เก็บในโฟลเดอร์ชื่อสินค้าใน Drive</span>
+    <span>ลากไฟล์มาวาง หรือคลิกเลือก · PDF รูปภาพ (JPG, PNG) หรือ .txt ไม่เกิน 10 MB</span>
     <input type="file" multiple accept=".pdf,application/pdf,image/*,.txt,text/plain" data-up="${k}"></label>`)
     +(uploading[k]?`<div class="upnow">กำลังอัปโหลดไป Google Drive… (${uploading[k]} ไฟล์)</div>`:'')
     +(upErr[k]?`<div class="uperr">${esc(upErr[k])}</div>`:'');
@@ -295,7 +279,7 @@ function renderSide(){
 /* ---------- purchasing form ---------- */
 function intro(){
   $('#pane').innerHTML=`<div class="intro"><h2>ส่งสินค้าใหม่ให้ RA ตรวจ</h2>
-  <p class="meta">ต้องมีครบทั้ง 4 ส่วน ระบบจึงจะยอมให้กดส่ง ไฟล์ที่แนบจะถูกเก็บไว้ใน Google Drive</p>
+  <p class="meta">ต้องมีครบทั้ง 4 ส่วน ระบบจึงจะยอมให้กดส่ง ไฟล์และข้อมูลจะถูกเก็บใน Google Drive แยกโฟลเดอร์ตามชื่อสินค้า</p>
   <div class="req"><div><b>ชื่อสินค้า</b><span>ชื่อที่จะใช้บนเอกสารและฉลาก</span></div><div><b>Ingredient</b><span>แนบไฟล์ + กรอก % ของแต่ละวัตถุดิบ รวมต้องเท่ากับ 100%</span></div>
   <div><b>Nutrition</b><span>แนบไฟล์ PDF รูปภาพ หรือข้อความ</span></div><div><b>Process Flow</b><span>แนบไฟล์ PDF รูปภาพ หรือข้อความ</span></div></div>
   <button class="btn pri" data-act="new">+ สร้างรายการสินค้าใหม่</button></div>`;
@@ -401,7 +385,7 @@ $('#sideH').addEventListener('click',e=>{const b=e.target.closest('button');if(!
   if(b.dataset.f){raFilter=b.dataset.f;renderSide()}
   if(b.dataset.act==='new'){cur=blank();dirty=false;delArm=false;render();$('#f-name')?.focus()}});
 $('#list').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(!b)return;const p=items.find(i=>i.id===b.dataset.open);if(!p)return;
-  if(role==='buy'){cur=clone(p);dirty=false;delArm=false}else sel=p.id;render();if(innerWidth<860)$('#pane').scrollIntoView({behavior:'smooth'})});
+  if(role==='buy'){cur=clone(p);dirty=false;delArm=false}else{sel=p.id;lastSelAt=p.updatedAt}render();if(innerWidth<860)$('#pane').scrollIntoView({behavior:'smooth'})});
 $('#pane').addEventListener('change',e=>{const t=e.target;if(t.dataset.up&&t.files?.length){addFiles(t.dataset.up,t.files);t.value=''}});
 $('#pane').addEventListener('dragover',e=>{const z=e.target.closest('[data-drop]');if(!z)return;e.preventDefault();z.classList.add('over')});
 $('#pane').addEventListener('dragleave',e=>{const z=e.target.closest('[data-drop]');if(z)z.classList.remove('over')});
@@ -418,53 +402,70 @@ $('#pane').addEventListener('input',e=>{const t=e.target;
   if(t.dataset.f==='name'){const h=$('.sheet-h h2');if(h)h.textContent=t.value||'สินค้าใหม่'}});
 $('#pane').addEventListener('click',e=>{const b=e.target.closest('button[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,i=+b.dataset.i;
   if(a==='new'){cur=blank();dirty=false;render();$('#f-name')?.focus();return}
-  if(a==='drive-retry'){const src=role==='buy'?cur:items.find(x=>x.id===sel);if(!src)return;
-    b.disabled=true;b.textContent='กำลังบันทึก…';
-    act(async()=>{const q=clone(src);try{await driveSave(q);if(q.status==='approved'||q.status==='rejected')await driveMark(q)}catch(e){q.driveErr=driveMsg(e)}
-      await save(q);if(role==='buy')cur=q;render()});return}
   if(role==='ra'){const p=items.find(x=>x.id===sel);if(!p)return;
     if(a==='reject'){const reason=$('#reason').value.trim();if(!reason){$('#rhint').hidden=false;$('#rsec').scrollIntoView({behavior:'smooth',block:'center'});$('#reason').focus({preventScroll:true});return}
       const secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);
-      act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=me;q.reviewedAt=now();log(q,'reject',reason);await save(q);sel=q.id;render();await driveMark(q)})}
+      act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'reject',reason);await save(q);sel=q.id;render()})}
     if(a==='approve'){if(!allOk(checks(p))||Object.values(raDraft.tick).filter(Boolean).length<(p.ingredients||[]).length)return;
-      act(async()=>{const q=clone(p);q.status='approved';q.rejectReason='';q.rejectSections=[];q.reviewedBy=me;q.reviewedAt=now();log(q,'approve');await save(q);render();await driveMark(q)})}
+      act(async()=>{const q=clone(p);q.status='approved';q.rejectReason='';q.rejectSections=[];q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'approve');await save(q);render()})}
     return}
   if(!cur)return;
   if(a==='rm-file'){const s=b.dataset.s;cur.files[s]=files(cur,s).filter((_,j)=>j!==i);dirty=true;renderForm()}
   if(a==='add-ingredients'){cur.ingredients.push({name:'',pct:''});dirty=true;renderForm(`[data-a=ingredients][data-i="${cur.ingredients.length-1}"][data-k=name]`)}
   if(a==='del-ingredients'){cur.ingredients.splice(i,1);dirty=true;renderForm()}
-  if(a==='save')act(async()=>{await save(cur);dirty=false;note('');renderSide();b.textContent='บันทึกแล้ว ✓';setTimeout(()=>{b.textContent='บันทึกร่าง'},1500)});
+  if(a==='save')act(async()=>{if(!String(cur.name||'').trim()){note('กรอกชื่อสินค้าก่อนบันทึก');return}await save(cur);dirty=false;note('');renderSide();b.textContent='บันทึกแล้ว ✓';setTimeout(()=>{b.textContent='บันทึกร่าง'},1500)});
   if(a==='submit'){if(!allOk(checks(cur))||FSEC.some(k=>uploading[k]))return;
-    act(async()=>{cur.status='submitted';cur.submittedAt=now();cur.drive=null;log(cur,'submit');await save(cur);dirty=false;render();
-      const q=clone(cur);
-      try{await driveSave(q)}catch(e){q.driveErr=driveMsg(e)}
-      await save(q);if(cur&&cur.id===q.id)cur=q;render()})}
+    const q=clone(cur);q.status='submitted';q.submittedAt=now();log(q,'submit');
+    b.disabled=true;b.textContent='กำลังส่งและบันทึกลง Drive…';
+    act(async()=>{try{await save(q);cur=q;dirty=false}finally{render()}})}
   if(a==='del'){if(!delArm){delArm=true;renderForm();return}
-    act(async()=>{const id=cur.id;if(db)await db.collection('products').doc(id).delete();else{mem.delete(id);items=[...mem.values()]}cur=null;delArm=false;render()})}
+    act(async()=>{const id=cur.id;if(items.some(x=>x.id===id))await api('delete',{id});items=items.filter(x=>x.id!==id);cur=null;delArm=false;render()})}
 });
 addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue=''}});
 
-/* ---------- data ---------- */
-async function loadNames(){
-  if(!user?.profiles)return;
-  const ids=[...new Set(items.flatMap(i=>[i.createdBy,i.reviewedBy,...(i.history||[]).map(h=>h.by)]).filter(x=>x&&!(x in names)))];
-  if(!ids.length)return;
-  try{const ps=await user.profiles(ids);for(const id of ids)names[id]=ps?.[id]?.name||'';render()}catch(e){}
+/* ---------- settings ---------- */
+function renderSet(open){
+  const p=$('#setp');p.hidden=!open;if(!open)return;
+  p.innerHTML=`<div class="grid">
+   <label>ชื่อของคุณ (แสดงในประวัติ)<input type="text" id="s-me" value="${esc(cfg.me)}" placeholder="เช่น สมหญิง (จัดซื้อ)"></label>
+   <label>รหัสทีม (ได้จากผู้ดูแลระบบ)<input type="text" id="s-key" value="${esc(cfg.key)}" autocomplete="off"></label>
+   <label>URL ของ Apps Script (ลงท้ายด้วย /exec)<input type="text" id="s-api" value="${esc(cfg.api)}" placeholder="https://script.google.com/macros/s/…/exec"></label></div>
+   <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="btn pri" id="s-save">บันทึกและเชื่อมต่อ</button><button class="btn" id="s-close">ปิด</button><span class="meta" id="s-msg"></span></div>`;
 }
+$('#setbtn').addEventListener('click',()=>renderSet($('#setp').hidden));
+$('#setp').addEventListener('click',async e=>{
+  if(e.target.id==='s-close'){renderSet(false);return}
+  if(e.target.id!=='s-save')return;
+  cfg={api:$('#s-api').value.trim(),key:$('#s-key').value.trim(),me:$('#s-me').value.trim()};
+  try{localStorage.setItem('ra-cfg',JSON.stringify(cfg))}catch(_){}
+  $('#s-msg').textContent='กำลังเชื่อมต่อ…';
+  if(await load(true)){renderSet(false)}else $('#s-msg').textContent=$('#note').textContent;
+});
+
+/* ---------- data ---------- */
+let loading=false;
+async function load(force){
+  if(loading)return false;
+  if(!force&&(busy||FSEC.some(k=>uploading[k])||document.hidden))return false;
+  loading=true;
+  try{
+    const r=await api('list');
+    items=(r.items||[]).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+    note('');
+    let repaint=false;
+    if(role==='buy'&&cur&&!dirty){const f=items.find(i=>i.id===cur.id);if(f&&f.updatedAt!==cur.updatedAt){cur=clone(f);repaint=true}}
+    if(role==='ra'&&sel){const f=items.find(i=>i.id===sel);if(f&&f.updatedAt!==lastSelAt){lastSelAt=f.updatedAt;repaint=true}}
+    renderSide();if(repaint||force)role==='buy'?renderForm():renderRA();
+    return true;
+  }catch(e){note(apiMsg(e));if(force)renderSide();return false}
+  finally{loading=false}
+}
+let lastSelAt=null;
 render();
-(async()=>{
-  try{user=await claude.use('user');me=user?await user.id():null}catch(e){}
-  try{mcp=await claude.use('mcp')}catch(e){mcp=null}
-  try{db=await claude.use('db')}catch(e){db=null}
-  if(!db){note('ตอนนี้เชื่อมฐานข้อมูลไม่ได้ ข้อมูลที่กรอกจะอยู่แค่ในหน้านี้และหายเมื่อปิด');items=[];renderSide();return}
-  const t=setTimeout(()=>note('ยังโหลดข้อมูลไม่ได้ อาจเป็นเพราะเครือข่าย ข้อมูลที่เห็นอาจไม่เป็นปัจจุบัน'),10000);
-  db.collection('products').onSnapshot(snap=>{
-    if(!snap.metadata.fromCache){clearTimeout(t);note('')}
-    items=snap.docs.map(d=>({...d.data(),id:d.id})).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
-    if(cur&&!dirty&&!FSEC.some(k=>uploading[k])){const f=items.find(i=>i.id===cur.id);if(f)cur=clone(f)}
-    if(role==='buy'&&FSEC.some(k=>uploading[k]))renderSide();else render();
-    loadNames();
-  },err=>{clearTimeout(t);note('โหลดข้อมูลไม่สำเร็จ ('+err.code+')')});
-})();
+if(!cfg.api||!cfg.key||!cfg.me){renderSet(true);note('ตั้งค่าก่อนใช้งาน: ใส่ชื่อของคุณ รหัสทีม และ URL ของ Apps Script');$('#list').innerHTML='<div class="empty">ยังไม่ได้เชื่อมต่อ</div>'}
+else load(true);
+setInterval(()=>load(false),20000);
+addEventListener('focus',()=>load(false));
+
 }
 </script></body></html>
