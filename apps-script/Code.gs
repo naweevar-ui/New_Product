@@ -113,11 +113,14 @@ function saveItem(item, role) {
       throw new Error('เฉพาะ RA เท่านั้นที่ Approve หรือ Reject ได้');
   } else if (prev && (item.status === 'approved' || item.status === 'rejected')) {
     // RA ตัดสิน: เปลี่ยนได้แค่สถานะและผลตรวจ เนื้อหาที่จัดซื้อส่งมาคงเดิม
-    if (was !== 'submitted') throw new Error('งานนี้ไม่ได้อยู่ในสถานะรอ RA ตรวจ');
+    // RA ตัดสินงานที่รอตรวจ หรือแก้ไขผลที่ตัดสินไปแล้ว (อนุมัติ ↔ Reject)
+    if (was !== 'submitted' && was !== 'approved' && was !== 'rejected') throw new Error('งานนี้ยังไม่ได้ส่งให้ RA');
     const keep = { status: item.status, rejectReason: item.rejectReason || '', rejectSections: item.rejectSections || [],
       reviewedBy: item.reviewedBy || '', reviewedAt: item.reviewedAt || Date.now(), history: item.history || prev.history };
     item = Object.assign({}, prev, keep);
+    if (was !== 'submitted' && item.drive) item.drive.mark = ''; // ให้เปลี่ยนชื่อไฟล์สรุปตามผลใหม่
   }
+  const changed = role === 'ra' && (was === 'approved' || was === 'rejected') && (item.status === 'approved' || item.status === 'rejected');
   const name = String(item.name || '').trim();
   item.updatedAt = Date.now();
 
@@ -165,7 +168,7 @@ function saveItem(item, role) {
   // แจ้งเตือนทางอีเมล (ถ้าส่งไม่สำเร็จ ข้อมูลยังบันทึกตามปกติ)
   try {
     if (item.status === 'submitted' && was !== 'submitted') notifyRA(item, ver);
-    if ((item.status === 'approved' || item.status === 'rejected') && was === 'submitted') notifyBuyer(item);
+    if ((item.status === 'approved' || item.status === 'rejected') && (was === 'submitted' || changed)) notifyBuyer(item, changed ? was : '');
   } catch (e) { console.error('ส่งอีเมลไม่สำเร็จ: ' + e); }
   return item;
 }
@@ -199,11 +202,13 @@ function notifyRA(item, ver) {
     '<br><b>เวลา:</b> ' + fmt(item.submittedAt || Date.now()) +
     '<br><b>Ingredient รวม 100%:</b> ' + (item.ing100 ? 'จัดซื้อยืนยันแล้ว' : 'ยังไม่ยืนยัน') + '</p>' + mailLinks_(item));
 }
-function notifyBuyer(item) {
+function notifyBuyer(item, oldStatus) {
   const ok = item.status === 'approved';
+  const chg = oldStatus ? '[แก้ไขผล] ' : '';
+  const chgNote = oldStatus ? '<p style="color:#9a6412"><b>RA แก้ไขผลการตรวจ</b> จากเดิม ' + (oldStatus === 'approved' ? 'อนุมัติ' : 'Reject') + ' → ' + (ok ? 'อนุมัติ' : 'Reject') + '</p>' : '';
   const secs = (item.rejectSections || []).map(k => SEC[k] || (k === 'name' ? 'ชื่อสินค้า' : k)).join(', ');
-  send_(BUY_EMAILS, (ok ? '[อนุมัติแล้ว] ' : '[Reject ต้องแก้ไข] ') + item.name,
-    '<p>RA ' + (ok ? '<b style="color:#1b7a42">อนุมัติ</b>' : '<b style="color:#c0322a">Reject</b>') + ' สินค้า <b>' + esc_(item.name) + '</b></p>' +
+  send_(BUY_EMAILS, chg + (ok ? '[อนุมัติแล้ว] ' : '[Reject ต้องแก้ไข] ') + item.name,
+    chgNote + '<p>RA ' + (ok ? '<b style="color:#1b7a42">อนุมัติ</b>' : '<b style="color:#c0322a">Reject</b>') + ' สินค้า <b>' + esc_(item.name) + '</b></p>' +
     '<p><b>ผู้ตรวจ:</b> ' + esc_(item.reviewedBy || '-') + '<br><b>เวลา:</b> ' + fmt(item.reviewedAt || Date.now()) + '</p>' +
     (ok ? '' : '<p><b>ส่วนที่ต้องแก้:</b> ' + esc_(secs || '-') + '<br><b>เหตุผล:</b> ' + esc_(item.rejectReason || '-') +
       '</p><p>เข้าระบบเพื่อแก้ไขแล้วกดส่งให้ RA ใหม่</p>') + mailLinks_(item));

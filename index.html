@@ -329,9 +329,11 @@ function hist(p){
 function renderRA(){
   const p=items.find(i=>i.id===sel);
   if(!p){$('#pane').innerHTML=`<div class="intro"><h2>เลือกสินค้าที่จะตรวจ</h2><p class="meta">รายการที่จัดซื้อส่งมาจะขึ้นใน “รอตรวจ” ทางซ้าย เปิดไฟล์ Ingredient ตรวจ แล้วกด Approve หรือ Reject พร้อมเหตุผล</p></div>`;return}
-  const c=checks(p),open=p.status==='submitted';
+  const c=checks(p),done=p.status==='approved'||p.status==='rejected';
   const stamp={rejected:['REJECT','bad'],approved:['APPROVED','ok'],submitted:['รอตรวจ','sub']}[p.status];
-  const dr=raDraft.id===p.id?raDraft:(raDraft={id:p.id,reason:'',secs:Object.keys(SEC).filter(k=>!c[k].ok),ingOk:false});
+  const dr=raDraft.id===p.id?raDraft:(raDraft={id:p.id,reason:'',secs:Object.keys(SEC).filter(k=>!c[k].ok),ingOk:false,edit:false});
+  const open=p.status==='submitted'||(done&&dr.edit&&cfg.role==='ra');
+  const was=p.status==='approved'?'อนุมัติ':'Reject';
   $('#pane').innerHTML=`<div class="sheet">${stamp?`<div class="stamp ${stamp[1]}">${stamp[0]}</div>`:''}
   <div class="sheet-h"><div>${chip(p.status)}<h2 style="padding-right:120px">${esc(p.name||'(ยังไม่มีชื่อ)')}</h2>
    <div class="meta">ส่งโดย ${esc(who(p.createdBy))} · อัปเดต ${fmt(p.updatedAt)}</div><div class="drv">${driveTag(p)}</div></div></div>
@@ -347,10 +349,12 @@ function renderRA(){
    <div class="boxes">${Object.keys(SEC).map(k=>`<label><input type="checkbox" value="${k}" class="rs" ${dr.secs.includes(k)?'checked':''}>${SEC[k]}</label>`).join('')}</div>
    <textarea id="reason" rows="3" placeholder="เช่น ไฟล์ Ingredient ไม่ระบุ % ของน้ำตาล, Process Flow ไม่มีขั้นตอนฆ่าเชื้อ">${esc(dr.reason)}</textarea>
    <div class="meta" id="rhint" style="color:var(--bad)" hidden>ใส่เหตุผลก่อนกด Reject</div></div></div>`:''}
-  ${p.status==='rejected'?`<div class="banner" style="margin-bottom:16px"><b>Reject แล้ว${p.rejectSections?.length?' — '+p.rejectSections.map(k=>SEC[k]).join(', '):''}</b>${esc(p.rejectReason)}</div>`:''}
+  ${done&&dr.edit?`<div class="banner" style="background:var(--warnb);color:var(--warn);margin-bottom:16px"><b>กำลังแก้ไขผลการตรวจ (ผลเดิม: ${was})</b>เลือกผลใหม่ด้านล่าง ระบบจะส่งอีเมลแจ้งฝ่ายจัดซื้อว่าผลเปลี่ยน</div>`:''}
+  ${p.status==='rejected'&&!dr.edit?`<div class="banner" style="margin-bottom:16px"><b>Reject แล้ว${p.rejectSections?.length?' — '+p.rejectSections.map(k=>SEC[k]).join(', '):''}</b>${esc(p.rejectReason)}</div>`:''}
   ${hist(p)}
   ${open?`<div class="bar"><div class="meta" id="rastat"></div><div class="acts">
-   <button class="btn bad" data-act="reject">Reject</button><button class="btn pri" id="appr" data-act="approve">Approve อนุมัติ</button></div></div>`:''}</div>`;
+   ${dr.edit?'<button class="btn" data-act="edit-cancel">ยกเลิกการแก้ไข</button>':''}<button class="btn bad" data-act="reject">${dr.edit&&p.status==='rejected'?'Reject (แก้เหตุผล)':'Reject'}</button><button class="btn pri" id="appr" data-act="approve">Approve อนุมัติ</button></div></div>`
+   :done&&cfg.role==='ra'?`<div class="bar"><div class="meta">ตรวจแล้วโดย ${esc(who(p.reviewedBy))} · ${fmt(p.reviewedAt)}</div><div class="acts"><button class="btn" data-act="edit-result">✏️ แก้ไขผลการตรวจ</button></div></div>`:''}</div>`;
   raRefresh();
 }
 function raRefresh(){
@@ -389,11 +393,15 @@ $('#pane').addEventListener('input',e=>{const t=e.target;
 $('#pane').addEventListener('click',e=>{const b=e.target.closest('button[data-act]');if(!b||b.disabled)return;const a=b.dataset.act,i=+b.dataset.i;
   if(a==='new'){cur=blank();dirty=false;render();$('#f-name')?.focus();return}
   if(role==='ra'){if(cfg.role!=='ra')return;const p=items.find(x=>x.id===sel);if(!p)return;
+    if(a==='edit-result'){raDraft={id:p.id,reason:p.rejectReason||'',secs:p.rejectSections||[],ingOk:false,edit:true};renderRA();$('#rsec')?.scrollIntoView({behavior:'smooth',block:'center'});return}
+    if(a==='edit-cancel'){raDraft.edit=false;renderRA();return}
+    const canDecide=p.status==='submitted'||raDraft.edit;if(!canDecide)return;
+    const chg=p.status!=='submitted'?` (แก้ผลจาก ${p.status==='approved'?'อนุมัติ':'Reject'})`:'';
     if(a==='reject'){const reason=$('#reason').value.trim();if(!reason){$('#rhint').hidden=false;$('#rsec').scrollIntoView({behavior:'smooth',block:'center'});$('#reason').focus({preventScroll:true});return}
       const secs=[...document.querySelectorAll('.rs:checked')].map(x=>x.value);
-      act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'reject',reason);await save(q);sel=q.id;render()})}
+      act(async()=>{const q=clone(p);q.status='rejected';q.rejectReason=reason;q.rejectSections=secs;q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'reject',reason+chg);await save(q);sel=q.id;raDraft.edit=false;render()})}
     if(a==='approve'){if(!allOk(checks(p))||!raDraft.ingOk)return;
-      act(async()=>{const q=clone(p);q.status='approved';q.rejectReason='';q.rejectSections=[];q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'approve');await save(q);render()})}
+      act(async()=>{const q=clone(p);q.status='approved';q.rejectReason='';q.rejectSections=[];q.reviewedBy=cfg.me;q.reviewedAt=now();log(q,'approve',chg.trim());await save(q);raDraft.edit=false;render()})}
     return}
   if(!cur)return;
   if(a==='rm-file'){const s=b.dataset.s;cur.files[s]=files(cur,s).filter((_,j)=>j!==i);dirty=true;renderForm()}
@@ -414,7 +422,7 @@ function renderSet(open){
   const p=$('#setp');p.hidden=!open;if(!open)return;
   p.innerHTML=`<div class="grid">
    <label>ชื่อของคุณ (แสดงในประวัติ)<input type="text" id="s-me" value="${esc(cfg.me)}" placeholder="เช่น สมหญิง (จัดซื้อ)"></label>
-   <label>รหัสเข้าใช้ (รหัสจัดซื้อ หรือรหัส RA)<input type="text" id="s-key" value="${esc(cfg.key)}" autocomplete="off"></label>
+   <label>รหัสเข้าใช้ (รหัสจัดซื้อ หรือรหัส RA)<input type="password" id="s-key" value="${esc(cfg.key)}" autocomplete="off"></label>
    <label>URL ของ Apps Script (ลงท้ายด้วย /exec)<input type="text" id="s-api" value="${esc(cfg.api)}" placeholder="https://script.google.com/macros/s/…/exec"></label></div>
    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="btn pri" id="s-save">บันทึกและเชื่อมต่อ</button><button class="btn" id="s-close">ปิด</button><span class="meta" id="s-msg"></span></div>`;
 }
@@ -436,7 +444,7 @@ async function load(force){
   loading=true;
   try{
     const r=await api('list');
-    if(r.role&&r.role!==cfg.role){cfg.role=r.role;try{localStorage.setItem('ra-cfg',JSON.stringify(cfg))}catch(_){}if(cfg.role!=='ra'&&role==='ra'){role='buy';force=true}}
+    if(r.role&&r.role!==cfg.role){cfg.role=r.role;try{localStorage.setItem('ra-cfg',JSON.stringify(cfg))}catch(_){}if(cfg.role!=='ra'&&role==='ra'){role='buy';force=true}else if(cfg.role==='ra'&&role!=='ra'){role='ra';force=true}}
     items=(r.items||[]).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
     note('');
     let repaint=false;
