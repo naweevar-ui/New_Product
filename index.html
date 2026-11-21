@@ -144,7 +144,7 @@ const ST={draft:['ร่าง','s-draft'],submitted:['รอ RA ตรวจ','
 const SEC={name:'ชื่อสินค้า',ing:'Ingredient',nut:'Nutrition',flow:'Process Flow'};
 const FSEC=['ing','nut','flow'];
 /* ===== ตั้งค่า: วาง URL ของ Apps Script Web app ที่นี่ (ลงท้ายด้วย /exec) ===== */
-const API_URL_DEFAULT='';
+const API_URL_DEFAULT='https://script.google.com/macros/s/AKfycbzNK_b4Bf41LapTS9SAa3ukypdE0NmHFtoCgIhK2rS1cIgytk74tnrDSCITfRobNt0/exec';
 const MAXB=10*1024*1024;
 let cfg={api:API_URL_DEFAULT,key:'',me:''};
 try{cfg={...cfg,...JSON.parse(localStorage.getItem('ra-cfg')||'{}')};if(!cfg.api)cfg.api=API_URL_DEFAULT}catch(e){}
